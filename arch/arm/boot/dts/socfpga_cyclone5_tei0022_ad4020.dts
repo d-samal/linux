@@ -1,0 +1,298 @@
+
+#include "socfpga_cyclone5.dtsi"
+
+/ {
+	model = "Terasic SoCkit";
+	compatible = "altr,socfpga-cyclone5", "altr,socfpga";
+
+	chosen {
+		bootargs = "earlyprintk";
+		stdout-path = "serial0:115200n8";
+	};
+
+	memory {
+		name = "memory";
+		device_type = "memory";
+		reg = <0x0 0x80000000>;
+	};
+
+	aliases {
+		ethernet0 = &gmac1;
+	};
+
+	dma_clk: dma_clk {
+		#clock-cells = <0x0>;
+		compatible = "fixed-clock";
+		clock-frequency = <100000000>;
+		clock-output-names = "dma_clock";
+	};
+
+        spi_engine_clk: spi_engine_clk {
+                #clock-cells = <0x0>;
+                compatible = "fixed-clock";
+                clock-frequency = <166666666>;
+                clock-output-names = "spi_engine_clock";
+        };
+
+	sys_clk: sys_clk {
+		#clock-cells = <0x0>;
+		compatible = "fixed-clock";
+		clock-frequency = <80000000>;
+		clock-output-names = "sys_clock";
+	};
+
+        vdd: regulator-vdd {
+                compatible = "regulator-fixed";
+                regulator-name = "fixed-supply";
+                regulator-min-microvolt = <1800000>;
+                regulator-max-microvolt = <1800000>;
+                regulator-always-on;
+        };
+
+        vdd_3_3: regulator-vdd {
+                compatible = "regulator-fixed";
+                regulator-name = "fixed-supply";
+                regulator-min-microvolt = <3300000>;
+                regulator-max-microvolt = <3300000>;
+                regulator-always-on;
+        };
+
+        vref: regulator-vref {
+                compatible = "regulator-fixed";
+                regulator-name = "fixed-supply";
+                regulator-min-microvolt = <2500000>;
+                regulator-max-microvolt = <2500000>;
+                regulator-always-on;
+        };
+
+	hdmi_pll: hdmi_pll {
+		compatible = "altr,altera_iopll-18.1";
+		#clock-cells = <1>;
+			hdmi_pll_outclk0: hdmi_pll_outclk0 {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <148500000>;	
+			clock-output-names = "hdmi_pll-outclk0";
+		}; 
+	};
+
+	soc {
+		clkmgr@ffd04000 {
+			clocks {
+				osc1 {
+					clock-frequency = <25000000>;
+				};
+			};
+		};
+
+		gmac1: ethernet@ff702000 {
+
+			#address-cells = <1>;
+        		#size-cells = <0>;
+
+			status = "okay";
+			phy-mode = "rgmii-id";
+
+       			ethernet-phy@1 {
+				reg = <1>;
+				adi,rx-internal-delay-ps = <2000>;
+				adi,tx-internal-delay-ps = <2000>;
+        		};
+
+		};
+
+		timer0: timer0@ffc08000 {
+			clock-frequency = <100000000>;
+		};
+
+		timer1: timer1@ffc09000 {
+			clock-frequency = <100000000>;
+		};
+
+		timer2: timer2@ffd00000 {
+			clock-frequency = <25000000>;
+		};
+
+		timer3: timer3@ffd01000 {
+			clock-frequency = <25000000>;
+		};
+
+		uart0: serial0@ffc02000 {
+			clock-frequency = <100000000>;
+		};
+
+		uart1: serial1@ffc03000 {
+			clock-frequency = <100000000>;
+		};
+
+		mmc: dwmmc0@ff704000 {
+			status = "okay";
+			supports-highspeed;
+			altr,dw-mshc-ciu-div = <0x3>;
+			altr,dw-mshc-sdr-timing = <0x0 0x3>;
+			slot@0 {
+				reg = <0x0>;
+				bus-width = <0x4>;
+			};
+		};
+
+		usb1: usb@ffb40000 {
+			status = "okay";
+			enable-dynamic-fifo = <1>;
+			host-rx-fifo-size = <0xa00>;
+			host-perio-tx-fifo-size = <0xa00>;
+			host-nperio-tx-fifo-size = <0xa00>;
+			dma-desc-enable = <0>;
+			dr_mode = "host";
+		};
+
+		/*i2c1: i2c@ffc05000 {
+			status = "okay";
+			speed-mode = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;*/
+
+		i2c0: i2c@ffc04000 {
+			status = "okay";
+			speed-mode = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			clock-frequency = <100000>;
+			i2c-sda-falling-time-ns = <6000>;
+			i2c-scl-falling-time-ns = <6000>;
+
+			adv7511: adv7511@39 {
+				compatible = "adi,adv7511";
+/*				reg = <0x39>;*/
+				reg = <0x39>, <0x3f>;
+				reg-names = "primary", "edid";
+
+				adi,input-depth = <8>;
+				adi,input-colorspace = "rgb";
+				adi,input-clock = "ddr";
+				adi,input-style = <1>;
+				adi,input-justification = "right";
+				adi,clock-delay = <0>;
+
+				avdd-supply = <&vdd>;
+				dvdd-supply = <&vdd>;
+				pvdd-supply = <&vdd>;
+				dvdd-3v-supply = <&vdd_3_3>;
+				bgvdd-supply = <&vdd>;
+
+				status = "okay";
+
+				ports {
+					#address-cells = <1>;
+					#size-cells = <0>;
+
+					port@0 {
+						reg = <0>;
+						adv7511_in: endpoint {
+							remote-endpoint = <&alt_vip_hdmi_out>;
+						};
+					}; 
+
+					port@1 {
+						reg = <1>;
+						
+					};
+
+				}; 
+			};
+		};
+
+
+		sys_hps_bridges: bridge@c0000000 {
+			compatible = "simple-bus";
+			reg = <0xc0000000 0x20000000>,
+				<0xff200000 0x00200000>;
+			reg-names = "axi_h2f", "axi_h2f_lw";
+			#address-cells = <2>;
+			#size-cells = <1>;
+			ranges = <0x00000000 0x00000000 0xc0000000 0x00010000>,
+				<0x00000001 0x00000000 0xff200000 0x00000040>,
+				<0x00000001 0x00090000 0xff290000 0x00000040>,
+				<0x00000001 0x00100000 0xff300000 0x00100000>;
+
+			alt_vip_cl_vfb_0: vip@0x100090000 {
+				status = "okay";
+				compatible = "altr,vip-frame-buffer-2.0";
+				reg = <0x00000001 0x00090000 0x00000040>;
+				interrupt-parent = <&intc>;
+				interrupts = <0 40 4>;
+				clocks = <&hdmi_pll 0>;
+				altr,bits-per-symbol = <8>;	
+				altr,max-height = <720>;	
+				altr,max-width = <1280>;	
+				altr,mem-port-width = <128>;
+
+				port {
+					alt_vip_hdmi_out: endpoint {
+						remote-endpoint = <&adv7511_in>;
+					};
+				};
+	
+			}; 
+
+
+			c5soc_sys_cpu_interconnect: bridge@100100000 {
+				compatible = "simple-bus";
+				reg = <0x00000001 0x00100000 0x00100000>;
+				#address-cells = <1>;
+				#size-cells = <1>;
+				ranges = <0x00020000 0x00000001 0x00120000 0x00010000>,
+					<0x00000000 0x00000001 0x00100000 0x00004000>;
+
+			        axi_spi_engine_0: axi-spi-engine@20000 {
+			                compatible = "adi,axi-spi-engine-1.00.a";
+					reg = <0x00020000 0x00010000>;
+			                interrupt-parent = <&intc>;
+			                interrupts = <0 43 4>;
+			                clocks = <&spi_engine_clk>, <&spi_engine_clk>;
+			                clock-names = "s_axi_aclk", "spi_clk";
+			                num-cs = <1>;
+
+			                #address-cells = <0x1>;
+			                #size-cells = <0x0>;
+
+			                ad4020: adc@0 {
+			                        compatible = "adi,ad4020";
+			                        reg = <0>;
+			                        spi-max-frequency = <83333333>;
+
+			                        dmas = <&rx_dma 0>;
+			                        dma-names = "rx";
+
+			                        vref-supply = <&vref>;
+			                        #io-channel-cells = <1>;
+			                };
+			        };
+
+			        rx_dma: rx-dmac@0 {
+			                compatible = "adi,axi-dmac-1.00.a";
+					reg = <0x00000000 0x00004000>;
+					interrupt-parent = <&intc>;
+					interrupts = <0 42 4>;
+					#dma-cells = <1>;
+					clocks = <&dma_clk>;
+
+			                adi,channels {
+			                        #size-cells = <0>;
+			                        #address-cells = <1>;
+
+			                        dma-channel@0 {
+			                                reg = <0>;
+			                                adi,source-bus-width = <32>;
+			                                adi,source-bus-type = <1>;
+			                                adi,destination-bus-width = <64>;
+			                                adi,destination-bus-type = <0>;
+			                        };
+			                };
+			        };
+
+
+			};
+		};
+	};
+};
