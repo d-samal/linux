@@ -253,30 +253,43 @@ static void axi_hdmi_encoder_enable(struct drm_encoder *encoder)
 	struct adv7511_video_config config;
 	struct edid *edid;
 
-	if (!private->clk_enabled) {
+	printk("entering axi_hdmi_encoder_enable \n"); /* sjk */
+
+	/*if (!private->clk_enabled) {  	       
 		clk_prepare_enable(private->hdmi_clock);
 		private->clk_enabled = true;
-	}
+	}*/					       /* sjk */
 	writel(AXI_HDMI_RESET_ENABLE, private->base + AXI_HDMI_REG_RESET);
 
 	if (!sfuncs)
 		return;
 
+	printk("go to  axi_hdmi_encoder_enable 1:\n"); /* sjk */
+
 	connector = &axi_hdmi_encoder->connector;
 	edid = drm_connector_get_edid(connector);
+
+	printk("go to  axi_hdmi_encoder_enable 2:\n"); /* sjk */
 
 	if (edid)
 		config.hdmi_mode = drm_detect_hdmi_monitor(edid);
 	else
 		config.hdmi_mode = false;
 
+	printk("go to  axi_hdmi_encoder_enable 3:\n"); /* sjk */
+
 	hdmi_avi_infoframe_init(&config.avi_infoframe);
 
+	printk("go to  axi_hdmi_encoder_enable 4:\n"); /* sjk */
+
 	config.avi_infoframe.scan_mode = HDMI_SCAN_MODE_UNDERSCAN;
+
+	printk("go to  axi_hdmi_encoder_enable 5:\n"); /* sjk */
 
 	if (private->is_rgb) {
 			config.csc_enable = false;
 			config.avi_infoframe.colorspace = HDMI_COLORSPACE_RGB;
+			printk("go to  axi_hdmi_encoder_enable 6:\n"); /* sjk */
 	} else {
 		config.csc_scaling_factor = ADV7511_CSC_SCALING_4;
 		config.csc_coefficents = adv7511_csc_ycbcr_to_rgb;
@@ -291,11 +304,20 @@ static void axi_hdmi_encoder_enable(struct drm_encoder *encoder)
 		}
 	}
 
+	printk("go to  axi_hdmi_encoder_enable 7:\n"); /* sjk */
+
 	if (sfuncs->set_config)
 		sfuncs->set_config(encoder, &config);
 
+	printk("go to  axi_hdmi_encoder_enable 8:\n"); /* sjk */
+
 	if (sfuncs->dpms)
 		sfuncs->dpms(encoder, DRM_MODE_DPMS_ON);
+
+	printk("config.csc_enable %d \n", config.csc_enable); /* sjk */
+	printk("config.csc_scaling_factor %d \n", config.csc_scaling_factor); /* sjk */
+	printk("config.csc_coefficents %d \n", config.csc_coefficents); /* sjk */
+	printk("config.avi_infoframe.colorspace %d \n", config.avi_infoframe.colorspace); /* sjk */
 }
 
 static void axi_hdmi_encoder_disable(struct drm_encoder *encoder)
@@ -329,24 +351,39 @@ static void axi_hdmi_encoder_mode_set(struct drm_encoder *encoder,
 
 	h_de_min = mode->htotal - mode->hsync_start;
 	h_de_max = h_de_min + mode->hdisplay;
+	printk("hdisplay %d \n", mode->hdisplay);
 	v_de_min = mode->vtotal - mode->vsync_start;
 	v_de_max = v_de_min + mode->vdisplay;
+	printk("vdisplay %d \n", mode->vdisplay);
 
 	val = (mode->hdisplay << 16) | mode->htotal;
 	writel(val,  private->base + AXI_HDMI_REG_HTIMING1);
+	printk("hdisplay_mod %d \n", val);
 	val = mode->hsync_end - mode->hsync_start;
 	writel(val,  private->base + AXI_HDMI_REG_HTIMING2);
+	printk("hsync %d \n", val);
 	val = (h_de_max << 16) | h_de_min;
 	writel(val,  private->base + AXI_HDMI_REG_HTIMING3);
+	printk("hde %d \n", val);
 
 	val = (mode->vdisplay << 16) | mode->vtotal;
 	writel(val,  private->base + AXI_HDMI_REG_VTIMING1);
+	printk("vdisplay %d \n", val);
 	val = mode->vsync_end - mode->vsync_start;
 	writel(val,  private->base + AXI_HDMI_REG_VTIMING2);
+	printk("vsync %d \n", val);
 	val = (v_de_max << 16) | v_de_min;
 	writel(val,  private->base + AXI_HDMI_REG_VTIMING3);
+	printk("vde %d \n", val);
 
 	clk_set_rate(private->hdmi_clock, mode->clock * 1000);
+
+	printk("private->hdmi_clock %d \n", private->hdmi_clock);
+
+	printk("mode->clock %d \n", mode->clock);
+
+	printk("I got to the mode set function in the axi_hdmi driver : \n");  //sjk
+
 }
 
 static const struct drm_encoder_helper_funcs axi_hdmi_encoder_helper_funcs = {

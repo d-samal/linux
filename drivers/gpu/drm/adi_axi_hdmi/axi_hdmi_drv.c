@@ -60,6 +60,8 @@ static int axi_hdmi_init(struct drm_driver *ddrv, struct device *dev)
 	struct drm_encoder *encoder;
 	int ret;
 
+	printk("I got to the axi_hdmi_init function in the axi_hdmi driver : \n");  //sjk
+
 	ddev = drm_dev_alloc(ddrv, dev);
 	if (IS_ERR(ddev))
 		return PTR_ERR(ddev);
@@ -153,19 +155,27 @@ static int axi_hdmi_platform_probe(struct platform_device *pdev)
 	struct resource *res;
 	int ret;
 
+	printk("Here I am probing the axi_hdmi driver 1: \n");  //sjk
+
 	private = devm_kzalloc(&pdev->dev, sizeof(*private), GFP_KERNEL);
 	if (!private)
 		return -ENOMEM;
+
+	printk("Here I am probing the axi_hdmi driver 2: \n");  //sjk
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	private->base = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(private->base))
 		return PTR_ERR(private->base);
 
-	private->hdmi_clock = devm_clk_get(&pdev->dev, NULL);
+	printk("Here I am probing the axi_hdmi driver 3: \n");  //sjk
+
+	/*private->hdmi_clock = devm_clk_get(&pdev->dev, NULL);
 	if (IS_ERR(private->hdmi_clock)) {
 		return -EPROBE_DEFER;
-	}
+	}*/
+
+	printk("Here I am probing the axi_hdmi driver 4: \n");  //sjk
 
 	ep_node = of_graph_get_next_endpoint(np, NULL);
 	if (ep_node) {
@@ -174,6 +184,7 @@ static int axi_hdmi_platform_probe(struct platform_device *pdev)
 			of_node_put(ep_node);
 			return ret;
 		}
+	printk("Here I am probing the axi_hdmi driver 5: \n");  //sjk
 		if (ep.port != 0 && ep.id != 0) {
 			of_node_put(ep_node);
 			return -EINVAL;
@@ -183,24 +194,25 @@ static int axi_hdmi_platform_probe(struct platform_device *pdev)
 	} else {
 		slave_node = of_parse_phandle(np, "encoder-slave", 0);
 	}
-
+	printk("Here I am probing the axi_hdmi driver 6: \n");  //sjk
 	if (!slave_node)
 		return -EINVAL;
-
+	printk("Here I am probing the axi_hdmi driver 7: \n");  //sjk
 	private->is_rgb = of_property_read_bool(np, "adi,is-rgb");
-
+	printk("Here I am probing the axi_hdmi driver 7a: \n");  //sjk
 	id = of_match_node(adv7511_encoder_of_match, np);
-
+	printk("Here I am probing the axi_hdmi driver 7b: \n");  //sjk
 	private->encoder_slave = of_find_i2c_device_by_node(slave_node);
 	of_node_put(slave_node);
-
+	printk("Here I am probing the axi_hdmi driver 7c: \n");  //sjk
 	if (!private->encoder_slave || !private->encoder_slave->dev.driver)
 		return -EPROBE_DEFER;
-
+	printk("Here I am probing the axi_hdmi driver 8: \n");  //sjk
 	private->dma = dma_request_slave_channel(&pdev->dev, "video");
+	printk("Here I am probing the axi_hdmi driver 8a: \n");  //sjk
 	if (private->dma == NULL)
 		return -EPROBE_DEFER;
-
+	printk("Here I am probing the axi_hdmi driver 9: \n");  //sjk
 	platform_set_drvdata(pdev, private);
 
 	return axi_hdmi_init(&axi_hdmi_driver, &pdev->dev);

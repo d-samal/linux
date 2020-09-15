@@ -313,6 +313,8 @@ static void adv7511_set_link_config(struct adv7511 *adv7511,
 	else
 		input_id = config->embedded_sync ? 2 : 1;
 
+	printk("input_id %d \n", input_id); //sjk
+
 	regmap_update_bits(adv7511->regmap, ADV7511_REG_I2C_FREQ_ID_CFG, 0xf,
 			   input_id);
 	regmap_update_bits(adv7511->regmap, ADV7511_REG_VIDEO_INPUT_CFG1, 0x7e,
@@ -531,7 +533,7 @@ static int adv7511_get_edid_block(void *data, u8 *buf, unsigned int block,
 				  size_t len)
 {
 	struct adv7511 *adv7511 = data;
-	int ret;
+	int ret, off;
 
 	if (len > 128)
 		return -EINVAL;
@@ -553,8 +555,12 @@ static int adv7511_get_edid_block(void *data, u8 *buf, unsigned int block,
 				return ret;
 		}
 
-		ret = regmap_bulk_read(adv7511->regmap_edid, 0,
-				       adv7511->edid_buf, 256);
+		for (off = 0; off < 256; off+= 64) {
+			ret = regmap_bulk_read(adv7511->regmap_edid, off,
+					       &adv7511->edid_buf[off], 64);
+			if (ret < 0)
+				return ret;
+		}
 
 		adv7511->current_edid_segment = block / 2;
 	}
@@ -1019,26 +1025,30 @@ static int adv7511_parse_dt(struct device_node *np,
 
 	of_property_read_u32(np, "adi,input-depth", &config->input_color_depth);
 	if (config->input_color_depth != 8 && config->input_color_depth != 10 &&
-	    config->input_color_depth != 12)
+	    config->input_color_depth != 12) {
+		printk("Here I am probing the adv7511 driver 3a4: \n");  //sjk
 		return -EINVAL;
-
+		}
+	printk("Here I am probing the adv7511 driver 3a: \n");  //sjk
 	ret = of_property_read_string(np, "adi,input-colorspace", &str);
 	if (ret < 0)
 		return ret;
-
-	if (!strcmp(str, "rgb"))
+	printk("Here I am probing the adv7511 driver 3b: \n");  //sjk
+	if (!strcmp(str, "rgb")) {
 		config->input_colorspace = HDMI_COLORSPACE_RGB;
+		printk("input_colorspace = %d\n", config->input_colorspace);
+		}
 	else if (!strcmp(str, "yuv422"))
 		config->input_colorspace = HDMI_COLORSPACE_YUV422;
 	else if (!strcmp(str, "yuv444"))
 		config->input_colorspace = HDMI_COLORSPACE_YUV444;
 	else
 		return -EINVAL;
-
+	printk("Here I am probing the adv7511 driver 3c: \n");  //sjk
 	ret = of_property_read_string(np, "adi,input-clock", &str);
 	if (ret < 0)
 		return ret;
-
+	printk("Here I am probing the adv7511 driver 3d: \n");  //sjk
 	if (!strcmp(str, "1x"))
 		config->input_clock = ADV7511_INPUT_CLOCK_1X;
 	else if (!strcmp(str, "2x"))
@@ -1047,22 +1057,22 @@ static int adv7511_parse_dt(struct device_node *np,
 		config->input_clock = ADV7511_INPUT_CLOCK_DDR;
 	else
 		return -EINVAL;
-
+	printk("Here I am probing the adv7511 driver 3e: \n");  //sjk
 	if (config->input_colorspace == HDMI_COLORSPACE_YUV422 ||
 	    config->input_clock != ADV7511_INPUT_CLOCK_1X) {
 		ret = of_property_read_u32(np, "adi,input-style",
 					   &config->input_style);
 		if (ret)
 			return ret;
-
+	printk("Here I am probing the adv7511 driver 3f: \n");  //sjk
 		if (config->input_style < 1 || config->input_style > 3)
 			return -EINVAL;
-
+	printk("Here I am probing the adv7511 driver 3g: \n");  //sjk
 		ret = of_property_read_string(np, "adi,input-justification",
 					      &str);
 		if (ret < 0)
 			return ret;
-
+	printk("Here I am probing the adv7511 driver 3g: \n");  //sjk
 		if (!strcmp(str, "left"))
 			config->input_justification =
 				ADV7511_INPUT_JUSTIFICATION_LEFT;
@@ -1079,18 +1089,18 @@ static int adv7511_parse_dt(struct device_node *np,
 		config->input_style = 1;
 		config->input_justification = ADV7511_INPUT_JUSTIFICATION_LEFT;
 	}
-
+	printk("Here I am probing the adv7511 driver 3h: \n");  //sjk
 	of_property_read_u32(np, "adi,clock-delay", &config->clock_delay);
 	if (config->clock_delay < -1200 || config->clock_delay > 1600)
 		return -EINVAL;
-
+	printk("Here I am probing the adv7511 driver 3i: \n");  //sjk
 	config->embedded_sync = of_property_read_bool(np, "adi,embedded-sync");
 
 	/* Hardcode the sync pulse configurations for now. */
 	config->sync_pulse = ADV7511_INPUT_SYNC_PULSE_NONE;
 	config->vsync_polarity = ADV7511_SYNC_POLARITY_PASSTHROUGH;
 	config->hsync_polarity = ADV7511_SYNC_POLARITY_PASSTHROUGH;
-
+	printk("Here I am probing the adv7511 driver 3j: \n");  //sjk
 	return 0;
 }
 
@@ -1103,13 +1113,15 @@ static int adv7511_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
 	unsigned int val;
 	int ret, reg_v1p2_uV;
 
+	printk("Here I am probing the adv7511 driver 1: \n");  //sjk
+
 	if (!dev->of_node)
 		return -EINVAL;
-
+	printk("Here I am probing the adv7511 driver 2: \n");  //sjk
 	adv7511 = devm_kzalloc(dev, sizeof(*adv7511), GFP_KERNEL);
 	if (!adv7511)
 		return -ENOMEM;
-
+	printk("Here I am probing the adv7511 driver 3: \n");  //sjk
 	adv7511->i2c_main = i2c;
 	adv7511->powered = false;
 	adv7511->status = connector_status_disconnected;
@@ -1121,19 +1133,26 @@ static int adv7511_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
 
 	memset(&link_config, 0, sizeof(link_config));
 
-	if (adv7511->type == ADV7511)
-		ret = adv7511_parse_dt(dev->of_node, &link_config);
-	else
-		ret = adv7533_parse_dt(dev->of_node, adv7511);
-	if (ret)
-		return ret;
+	if (adv7511->type == ADV7511) {
 
+		ret = adv7511_parse_dt(dev->of_node, &link_config);
+		printk("Here I am probing the adv7511 driver 3a1: \n");  //sjk
+	}
+	else {
+		ret = adv7533_parse_dt(dev->of_node, adv7511);
+		printk("Here I am probing the adv7511 driver 3a2: \n");  //sjk
+	}
+	if (ret) {
+		printk("Here I am probing the adv7511 driver 3a3: \n");  //sjk
+		return ret;
+	}
+	printk("Here I am probing the adv7511 driver 4: \n");  //sjk
 	ret = adv7511_init_regulators(adv7511);
 	if (ret) {
 		dev_err(dev, "failed to init regulators\n");
 		return ret;
 	}
-
+	printk("Here I am probing the adv7511 driver 5: \n");  //sjk
 	/*
 	 * The power down GPIO is optional. If present, toggle it from active to
 	 * inactive to wake up the encoder.
@@ -1245,7 +1264,7 @@ static int adv7511_probe(struct i2c_client *i2c, const struct i2c_device_id *id)
 	adv7511->bridge.of_node = dev->of_node;
 
 	drm_bridge_add(&adv7511->bridge);
-
+	printk("Here I am probing the adv7511 driver 6: \n");  //sjk
 	adv7511_audio_init(dev, adv7511);
 	return 0;
 
@@ -1259,7 +1278,7 @@ err_i2c_unregister_edid:
 	i2c_unregister_device(adv7511->i2c_edid);
 uninit_regulators:
 	adv7511_uninit_regulators(adv7511);
-
+	printk("Here I am probing the adv7511 driver 7: \n");  //sjk
 	return ret;
 }
 

@@ -1,10 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Common library for ADIS16XXX devices
  *
  * Copyright 2012 Analog Devices Inc.
  *   Author: Lars-Peter Clausen <lars@metafoo.de>
- *
- * Licensed under the GPL-2 or later.
  */
 
 #include <linux/delay.h>
@@ -226,7 +225,7 @@ EXPORT_SYMBOL_GPL(__adis_read_reg);
  * Updates the desired bits of @reg in accordance with @mask and @val.
  */
 int __adis_update_bits_base(struct adis *adis, unsigned int reg, const u32 mask,
-			    u32 val, u8 size)
+			    const u32 val, u8 size)
 {
 	int ret;
 	u32 __val;
@@ -235,8 +234,7 @@ int __adis_update_bits_base(struct adis *adis, unsigned int reg, const u32 mask,
 	if (ret)
 		return ret;
 
-	__val &= ~mask;
-	__val |= val & mask;
+	__val = (__val & ~mask) | (val & mask);
 
 	return __adis_write_reg(adis, reg, __val, size);
 }
@@ -387,10 +385,13 @@ static int adis_self_test(struct adis *adis)
  * __adis_initial_startup() - Device initial setup
  * @adis: The adis device
  *
- * This functions makes sure the device is not in reset, via rst pin.
- * Furthermore it performs a SW reset (only in the case we are not coming from
- * reset already) and a self test. It also compares the product id with the
- * device id if the prod_id_reg variable is set.
+ * The function performs a HW reset via a reset pin that should be specified
+ * via GPIOLIB. If no pin is configured a SW reset will be performed.
+ * The RST pin for the ADIS devices should be configured as ACTIVE_LOW.
+ *
+ * After the self-test operation is performed, the function will also check
+ * that the product ID is as expected. This assumes that drivers providing
+ * 'prod_id_reg' will also provide the 'prod_id'.
  *
  * Returns 0 if the device is operational, a negative error code otherwise.
  *
@@ -399,17 +400,19 @@ static int adis_self_test(struct adis *adis)
  */
 int __adis_initial_startup(struct adis *adis)
 {
-	int ret;
-	struct gpio_desc *gpio;
 	const struct adis_timeout *timeouts = adis->data->timeouts;
-	const char *iio_name = spi_get_device_id(adis->spi)->name;
-	u16 prod_id, dev_id;
+	struct gpio_desc *gpio;
+	uint16_t prod_id;
+	int ret;
 
 	/* check if the device has rst pin low */
 	gpio = devm_gpiod_get_optional(&adis->spi->dev, "reset", GPIOD_ASIS);
-	if (IS_ERR(gpio)) {
+	if (IS_ERR(gpio))
 		return PTR_ERR(gpio);
-	} else if (gpio && gpiod_get_value_cansleep(gpio)) {
+
+	if (gpio) {
+		gpiod_set_value_cansleep(gpio, 1);
+		msleep(10);
 		/* bring device out of reset */
 		gpiod_set_value_cansleep(gpio, 0);
 		msleep(timeouts->reset_ms);
@@ -430,14 +433,10 @@ int __adis_initial_startup(struct adis *adis)
 	if (ret)
 		return ret;
 
-	ret = sscanf(iio_name, "adis%hu\n", &dev_id);
-	if (ret != 1)
-		return -EINVAL;
-
-	if (prod_id != dev_id)
+	if (prod_id != adis->data->prod_id)
 		dev_warn(&adis->spi->dev,
-			 "Device ID(%u) and product ID(%u) do not match.",
-			 dev_id, prod_id);
+			 "Device ID(%u) and product ID(%u) do not match.\n",
+			 adis->data->prod_id, prod_id);
 
 	return 0;
 }

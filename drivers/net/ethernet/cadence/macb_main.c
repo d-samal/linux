@@ -626,6 +626,11 @@ static int macb_mii_probe(struct net_device *dev)
 	else
 		phydev->supported &= PHY_BASIC_FEATURES;
 
+	/* FIXME: Drop this in newer kernels */
+	if (bp->phy_interface == PHY_INTERFACE_MODE_RMII ||
+	    bp->phy_interface == PHY_INTERFACE_MODE_MII)
+		phydev->supported &= PHY_BASIC_FEATURES;
+
 	if (bp->caps & MACB_CAPS_NO_GIGABIT_HALF)
 		phydev->supported &= ~SUPPORTED_1000baseT_Half;
 
@@ -2162,12 +2167,14 @@ static int macb_alloc_consistent(struct macb *bp)
 		goto out_err;
 
 	/* Required for tie off descriptor for PM cases */
-	bp->rx_ring_tieoff = dma_alloc_coherent(&bp->pdev->dev,
-						macb_dma_desc_get_size(bp),
-						&bp->rx_ring_tieoff_dma,
-						GFP_KERNEL);
-	if (!bp->rx_ring_tieoff)
-		goto out_err;
+	if (!(bp->caps & MACB_CAPS_QUEUE_DISABLE)) {
+		bp->rx_ring_tieoff = dma_alloc_coherent(&bp->pdev->dev,
+							macb_dma_desc_get_size(bp),
+							&bp->rx_ring_tieoff_dma,
+							GFP_KERNEL);
+		if (!bp->rx_ring_tieoff)
+			goto out_err;
+	}
 
 	return 0;
 
@@ -2211,7 +2218,9 @@ static void gem_init_rings(struct macb *bp)
 
 		gem_rx_refill(queue);
 	}
-	macb_init_tieoff(bp);
+
+	if (!(bp->caps & MACB_CAPS_QUEUE_DISABLE))
+		macb_init_tieoff(bp);
 
 }
 
@@ -3502,7 +3511,7 @@ static int macb_clk_init(struct platform_device *pdev, struct clk **pclk,
 		if (!err)
 			err = -ENODEV;
 
-		dev_err(&pdev->dev, "failed to get macb_clk (%u)\n", err);
+		dev_err(&pdev->dev, "failed to get macb_clk (%d)\n", err);
 		return err;
 	}
 
@@ -3512,7 +3521,7 @@ static int macb_clk_init(struct platform_device *pdev, struct clk **pclk,
 		if (!err)
 			err = -ENODEV;
 
-		dev_err(&pdev->dev, "failed to get hclk (%u)\n", err);
+		dev_err(&pdev->dev, "failed to get hclk (%d)\n", err);
 		return err;
 	}
 
@@ -3530,31 +3539,31 @@ static int macb_clk_init(struct platform_device *pdev, struct clk **pclk,
 
 	err = clk_prepare_enable(*pclk);
 	if (err) {
-		dev_err(&pdev->dev, "failed to enable pclk (%u)\n", err);
+		dev_err(&pdev->dev, "failed to enable pclk (%d)\n", err);
 		return err;
 	}
 
 	err = clk_prepare_enable(*hclk);
 	if (err) {
-		dev_err(&pdev->dev, "failed to enable hclk (%u)\n", err);
+		dev_err(&pdev->dev, "failed to enable hclk (%d)\n", err);
 		goto err_disable_pclk;
 	}
 
 	err = clk_prepare_enable(*tx_clk);
 	if (err) {
-		dev_err(&pdev->dev, "failed to enable tx_clk (%u)\n", err);
+		dev_err(&pdev->dev, "failed to enable tx_clk (%d)\n", err);
 		goto err_disable_hclk;
 	}
 
 	err = clk_prepare_enable(*rx_clk);
 	if (err) {
-		dev_err(&pdev->dev, "failed to enable rx_clk (%u)\n", err);
+		dev_err(&pdev->dev, "failed to enable rx_clk (%d)\n", err);
 		goto err_disable_txclk;
 	}
 
 	err = clk_prepare_enable(*tsu_clk);
 	if (err) {
-		dev_err(&pdev->dev, "failed to enable tsu_clk (%u)\n", err);
+		dev_err(&pdev->dev, "failed to enable tsu_clk (%d)\n", err);
 		goto err_disable_rxclk;
 	}
 
@@ -4035,7 +4044,7 @@ static int at91ether_clk_init(struct platform_device *pdev, struct clk **pclk,
 
 	err = clk_prepare_enable(*pclk);
 	if (err) {
-		dev_err(&pdev->dev, "failed to enable pclk (%u)\n", err);
+		dev_err(&pdev->dev, "failed to enable pclk (%d)\n", err);
 		return err;
 	}
 
@@ -4137,6 +4146,17 @@ static const struct macb_config zynqmp_config = {
 	.jumbo_max_len = 10240,
 };
 
+static const struct macb_config versal_config = {
+	.caps = MACB_CAPS_GIGABIT_MODE_AVAILABLE | MACB_CAPS_JUMBO |
+		MACB_CAPS_GEM_HAS_PTP | MACB_CAPS_BD_RD_PREFETCH |
+		MACB_CAPS_PCS |	MACB_CAPS_PARTIAL_STORE_FORWARD |
+		MACB_CAPS_WOL | MACB_CAPS_NEED_TSUCLK | MACB_CAPS_QUEUE_DISABLE,
+	.dma_burst_length = 16,
+	.clk_init = macb_clk_init,
+	.init = macb_init,
+	.jumbo_max_len = 10240,
+};
+
 static const struct macb_config zynq_config = {
 	.caps = MACB_CAPS_GIGABIT_MODE_AVAILABLE | MACB_CAPS_NO_GIGABIT_HALF |
 		MACB_CAPS_NEEDS_RSTONUBR,
@@ -4160,6 +4180,7 @@ static const struct of_device_id macb_dt_ids[] = {
 	{ .compatible = "cdns,emac", .data = &emac_config },
 	{ .compatible = "cdns,zynqmp-gem", .data = &zynqmp_config},
 	{ .compatible = "cdns,zynq-gem", .data = &zynq_config },
+	{ .compatible = "cdns,versal-gem", .data = &versal_config},
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, macb_dt_ids);
@@ -4462,8 +4483,11 @@ static int __maybe_unused macb_suspend(struct device *dev)
 		/* Tie off RX queues */
 		for (q = 0, queue = bp->queues; q < bp->num_queues;
 		     ++q, ++queue) {
-			queue_writel(queue, RBQP,
-				     lower_32_bits(bp->rx_ring_tieoff_dma));
+			if (bp->caps & MACB_CAPS_QUEUE_DISABLE)
+				queue_writel(queue, RBQP, GEM_RBQP_DISABLE);
+			else
+				queue_writel(queue, RBQP,
+					     lower_32_bits(bp->rx_ring_tieoff_dma));
 		}
 		ctrl = macb_readl(bp, NCR);
 		ctrl |= MACB_BIT(RE);
@@ -4572,7 +4596,10 @@ static int __maybe_unused macb_runtime_suspend(struct device *dev)
 		clk_disable_unprepare(bp->pclk);
 		clk_disable_unprepare(bp->rx_clk);
 	}
-	clk_disable_unprepare(bp->tsu_clk);
+
+	if (!(device_may_wakeup(&bp->dev->dev) &&
+	      (bp->caps & MACB_CAPS_NEED_TSUCLK)))
+		clk_disable_unprepare(bp->tsu_clk);
 
 	return 0;
 }
@@ -4589,7 +4616,10 @@ static int __maybe_unused macb_runtime_resume(struct device *dev)
 		clk_prepare_enable(bp->tx_clk);
 		clk_prepare_enable(bp->rx_clk);
 	}
-	clk_prepare_enable(bp->tsu_clk);
+
+	if (!(device_may_wakeup(&bp->dev->dev) &&
+	      (bp->caps & MACB_CAPS_NEED_TSUCLK)))
+		clk_prepare_enable(bp->tsu_clk);
 
 	return 0;
 }

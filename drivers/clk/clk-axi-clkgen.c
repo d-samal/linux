@@ -555,6 +555,8 @@ static int axi_clkgen_probe(struct platform_device *pdev)
 	unsigned int i;
 	int ret;
 
+	printk("Here I am probing the axi_clkgen driver 1: \n");  //sjk
+
 	if (!pdev->dev.of_node)
 		return -ENODEV;
 

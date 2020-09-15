@@ -68,6 +68,22 @@
 #define TX_CLK25_DIV			0x6a
 #define TX_CLK25_DIV_MASK		0x1f
 
+#define GTH34_SYSCLK_CPLL		0
+#define GTH34_SYSCLK_QPLL1		2
+#define GTH34_SYSCLK_QPLL0		3
+
+#define GTH34_QPLL0_FBDIV_DIV		0x14
+#define GTH34_QPLL0_REFCLK_DIV		0x18
+#define GTH34_QPLL1_FBDIV		0x94
+#define GTH34_QPLL1_REFCLK_DIV		0x98
+
+#define GTH34_QPLL_FBDIV(xcvr, x)	\
+	(0x14 + xilinx_xcvr_qpll_sel((xcvr), (x)) * 0x80)
+#define GTH34_QPLL_REFCLK_DIV(xcvr, x)	\
+	(0x18 + xilinx_xcvr_qpll_sel((xcvr), (x)) * 0x80)
+#define GTY4_QPLL_CLKOUT_RATE(xcvr, x)	\
+	(0x0E + xilinx_xcvr_qpll_sel((xcvr), (x)) * 0x80)
+
 static int xilinx_xcvr_drp_read(struct xilinx_xcvr *xcvr,
 	unsigned int drp_port, unsigned int reg)
 {
@@ -274,17 +290,35 @@ int xilinx_xcvr_configure_lpm_dfe_mode(struct xilinx_xcvr *xcvr,
 }
 EXPORT_SYMBOL_GPL(xilinx_xcvr_configure_lpm_dfe_mode);
 
+static unsigned int xilinx_xcvr_qpll_sel(struct xilinx_xcvr *xcvr,
+					 unsigned int sys_clk_sel)
+{
+	switch (xcvr->type) {
+	case XILINX_XCVR_TYPE_US_GTH3:
+	case XILINX_XCVR_TYPE_US_GTH4:
+	case XILINX_XCVR_TYPE_US_GTY4:
+		if (sys_clk_sel == GTH34_SYSCLK_QPLL1)
+			return 1;
+		/* fall-through */
+	default:
+		return 0;
+	}
+}
+
 static void xilinx_xcvr_setup_cpll_vco_range(struct xilinx_xcvr *xcvr,
 					     unsigned int *vco_max)
 {
 	if  ((xcvr->type == XILINX_XCVR_TYPE_US_GTH3) |
-	     (xcvr->type == XILINX_XCVR_TYPE_US_GTH4) |
-	     (xcvr->type == XILINX_XCVR_TYPE_US_GTY4)) {
-		if (xcvr->voltage < 850)
+	     (xcvr->type == XILINX_XCVR_TYPE_US_GTH4)) {
+		if ((xcvr->voltage < 850))
 			*vco_max = 4250000;
 		else if ((xcvr->speed_grade / 10) == 1)
 			*vco_max = 4250000;
 	}
+
+	if (xcvr->type == XILINX_XCVR_TYPE_US_GTY4)
+		if ((xcvr->speed_grade / 10) == 1)
+			*vco_max = 4250000;
 }
 
 static void xilinx_xcvr_setup_qpll_vco_range(struct xilinx_xcvr *xcvr,
@@ -293,31 +327,14 @@ static void xilinx_xcvr_setup_qpll_vco_range(struct xilinx_xcvr *xcvr,
 					     unsigned int *vco1_min,
 					     unsigned int *vco1_max)
 {
-	switch (xcvr->type) {
-	case XILINX_XCVR_TYPE_S7_GTX2:
-		if ((xcvr->dev_package == ADI_AXI_FPGA_DEV_FB) |
-		    (xcvr->dev_package == ADI_AXI_FPGA_DEV_SB))
-			*vco0_max = 6600000;
+	if (xcvr->type == XILINX_XCVR_TYPE_S7_GTX2) {
+		if ((xcvr->family == ADI_AXI_FPGA_FAMILY_KINTEX))
+			if ((xcvr->dev_package == ADI_AXI_FPGA_DEV_FB) |
+			    (xcvr->dev_package == ADI_AXI_FPGA_DEV_RF) |
+			    (xcvr->dev_package == ADI_AXI_FPGA_DEV_FF))
+				*vco0_max = 6600000;
 		if ((xcvr->speed_grade / 10) == 2)
 			*vco1_max = 10312500;
-		break;
-	case XILINX_XCVR_TYPE_US_GTH3:
-	case XILINX_XCVR_TYPE_US_GTH4:
-	case XILINX_XCVR_TYPE_US_GTY4:
-		*vco1_min = 8000000;
-		*vco1_max = 13000000;
-		if (((xcvr->voltage < 900) | (xcvr->voltage > 720)) &
-		    ((xcvr->speed_grade / 10) == 1)) {
-			*vco0_max = 12500000;
-			*vco1_max = *vco0_max;
-		}
-		if (xcvr->voltage == 720) {
-			if ((xcvr->speed_grade / 10) == 2)
-				*vco0_max = 12500000;
-			else if ((xcvr->speed_grade / 10) == 1)
-				*vco0_max = 10312500;
-			*vco1_max = *vco0_max;
-		}
 	}
 }
 
@@ -368,16 +385,22 @@ int xilinx_xcvr_calc_cpll_config(struct xilinx_xcvr *xcvr,
 	if (ret)
 		return ret;
 
+	/**
+	 * Ref: https://www.xilinx.com/support/documentation/user_guides/ug476_7Series_Transceivers.pdf
+	 * Page: 48
+	 *    Vco_Freq = (RefClk * n1 * n2) / m
+	 *    LineRate = (Vco_Freq * 2) / d
+	 */
 	for (m = 1; m <= 2; m++) {
 		for (d = 1; d <= 8; d <<= 1) {
 			for (n1 = 5; n1 >= 4; n1--) {
 				for (n2 = 5; n2 >= 1; n2--) {
-					vco_freq = refclk_khz * n1 * n2 / m;
+					vco_freq = (refclk_khz * n1 * n2) / m;
 
 					if (vco_freq > vco_max || vco_freq < vco_min)
 						continue;
 
-					if (refclk_khz / m / d == lane_rate_khz / (2 * n1 * n2)) {
+					if ((vco_freq * 2) / d == lane_rate_khz) {
 						if (conf) {
 							conf->refclk_div = m;
 							conf->fb_div_N1 = n1;
@@ -403,7 +426,7 @@ int xilinx_xcvr_calc_cpll_config(struct xilinx_xcvr *xcvr,
 EXPORT_SYMBOL_GPL(xilinx_xcvr_calc_cpll_config);
 
 static int xilinx_xcvr_get_qpll_vco_ranges(struct xilinx_xcvr *xcvr,
-	struct xilinx_xcvr_qpll_config *conf,
+	unsigned int sys_clk_sel,
 	unsigned int *vco0_min, unsigned int *vco0_max,
 	unsigned int *vco1_min, unsigned int *vco1_max)
 {
@@ -417,16 +440,11 @@ static int xilinx_xcvr_get_qpll_vco_ranges(struct xilinx_xcvr *xcvr,
 	case XILINX_XCVR_TYPE_US_GTH3:
 	case XILINX_XCVR_TYPE_US_GTH4:
 	case XILINX_XCVR_TYPE_US_GTY4:
-		if (conf != NULL) {
-			if (conf->qpll) {
-				*vco0_min = 8000000;
-				*vco0_max = 13000000;
-			} else {
-				*vco0_min = 9800000;
-				*vco0_max = 16375000;
-			}
-		} else {
+		if (xilinx_xcvr_qpll_sel(xcvr, sys_clk_sel)) {
 			*vco0_min = 8000000;
+			*vco0_max = 13000000;
+		} else {
+			*vco0_min = 9800000;
 			*vco0_max = 16375000;
 		}
 		*vco1_min = *vco0_min;
@@ -457,7 +475,8 @@ static int xilinx_xcvr_get_qpll_vco_ranges(struct xilinx_xcvr *xcvr,
 }
 
 int xilinx_xcvr_calc_qpll_config(struct xilinx_xcvr *xcvr,
-	unsigned int refclk_hz, unsigned int lane_rate_khz,
+	unsigned int sys_clk_sel, unsigned int refclk_hz,
+	unsigned int lane_rate_khz,
 	struct xilinx_xcvr_qpll_config *conf,
 	unsigned int *out_div)
 {
@@ -489,16 +508,26 @@ int xilinx_xcvr_calc_qpll_config(struct xilinx_xcvr *xcvr,
 		return -EINVAL;
 	}
 
-	ret = xilinx_xcvr_get_qpll_vco_ranges(xcvr, conf,
+	ret = xilinx_xcvr_get_qpll_vco_ranges(xcvr, sys_clk_sel,
 					      &vco0_min, &vco0_max,
 					      &vco1_min, &vco1_max);
 	if (ret)
 		return ret;
 
+	/**
+	 * Ref: https://www.xilinx.com/support/documentation/user_guides/ug476_7Series_Transceivers.pdf
+	 * Page: 55
+	 *   Vco_Freq = (refclk_khz * n) / m
+	 *   LineRate = Vco_Freq / d
+	 *
+	 * Make sure to not confuse Vco_Freq with fPLLClkout.
+	 * fPLLClkout = (refclk_khz * n) / (m * 2), so technically Vco_Freq = 2 * fPLLClkout
+	 * And the 2 is reduced in both equations.
+	 */
 	for (m = 1; m <= 4; m++) {
 		for (d = 1; d <= 16; d <<= 1) {
 			for (n = 0; N[n] != 0; n++) {
-				vco_freq = refclk_khz * N[n] / m;
+				vco_freq = (refclk_khz * N[n]) / m;
 
 				/*
 				 * high band = 9.8G to 12.5GHz VCO
@@ -511,12 +540,40 @@ int xilinx_xcvr_calc_qpll_config(struct xilinx_xcvr *xcvr,
 				else
 					continue;
 
-				if (refclk_khz / m / d == lane_rate_khz / N[n]) {
+				/**
+				 * First try to match half-rate 
+				 */
+				if (vco_freq / d == lane_rate_khz) {
 
 					if (conf) {
 						conf->refclk_div = m;
 						conf->fb_div = N[n];
 						conf->band = band;
+						conf->qty4_full_rate = 0;
+					}
+
+					if (out_div)
+						*out_div = d;
+
+					return 0;
+				}
+
+				if (xcvr->type != XILINX_XCVR_TYPE_US_GTY4)
+					continue;
+
+				/**
+				 * Ref: https://www.xilinx.com/support/documentation/user_guides/ug578-ultrascale-gty-transceivers.pdf
+				 * Page: 49
+				 * For GTY4: LineRate = (2 * Vco_Freq) / d
+				 * Try Full-rate
+				 */
+				if ((vco_freq * 2) / d == lane_rate_khz) {
+
+					if (conf) {
+						conf->refclk_div = m;
+						conf->fb_div = N[n];
+						conf->band = band;
+						conf->qty4_full_rate = 1;
 					}
 
 					if (out_div)
@@ -779,19 +836,20 @@ int xilinx_xcvr_cpll_calc_lane_rate(struct xilinx_xcvr *xcvr,
 EXPORT_SYMBOL_GPL(xilinx_xcvr_cpll_calc_lane_rate);
 
 static int xilinx_xcvr_gth34_qpll_read_config(struct xilinx_xcvr *xcvr,
-	unsigned int drp_port, struct xilinx_xcvr_qpll_config *conf)
+	unsigned int sys_clk_sel, unsigned int drp_port,
+	struct xilinx_xcvr_qpll_config *conf)
 {
 	int val;
 
-	#define QPLL0_FBDIV_DIV 0x14
-	#define QPLL0_REFCLK_DIV 0x18
-	#define QPLL1_FBDIV 0x94
-	#define QPLL1_REFCLK_DIV 0x98
+	val = xilinx_xcvr_drp_read(xcvr, drp_port,
+			GTY4_QPLL_CLKOUT_RATE(xcvr, sys_clk_sel));
+	if (val < 0)
+		return val;
 
-	#define QPLL_FBDIV(x) (0x14 + (x) * 0x80)
-	#define QPLL_REFCLK_DIV(x) (0x18 + (x) * 0x80)
+	conf->qty4_full_rate = val & 0x1;
 
-	val = xilinx_xcvr_drp_read(xcvr, drp_port, QPLL_REFCLK_DIV(conf->qpll));
+	val = xilinx_xcvr_drp_read(xcvr, drp_port,
+			GTH34_QPLL_REFCLK_DIV(xcvr, sys_clk_sel));
 	if (val < 0)
 		return val;
 
@@ -813,7 +871,8 @@ static int xilinx_xcvr_gth34_qpll_read_config(struct xilinx_xcvr *xcvr,
 		break;
 	}
 
-	val = xilinx_xcvr_drp_read(xcvr, drp_port, QPLL_FBDIV(conf->qpll));
+	val = xilinx_xcvr_drp_read(xcvr, drp_port,
+			GTH34_QPLL_FBDIV(xcvr, sys_clk_sel));
 	if (val < 0)
 		return val;
 
@@ -896,7 +955,8 @@ static int xilinx_xcvr_gtx2_qpll_read_config(struct xilinx_xcvr *xcvr,
 }
 
 int xilinx_xcvr_qpll_read_config(struct xilinx_xcvr *xcvr,
-	unsigned int drp_port, struct xilinx_xcvr_qpll_config *conf)
+	unsigned int sys_clk_sel, unsigned int drp_port,
+	struct xilinx_xcvr_qpll_config *conf)
 {
 	switch (xcvr->type) {
 	case XILINX_XCVR_TYPE_S7_GTX2:
@@ -904,7 +964,8 @@ int xilinx_xcvr_qpll_read_config(struct xilinx_xcvr *xcvr,
 	case XILINX_XCVR_TYPE_US_GTH3:
 	case XILINX_XCVR_TYPE_US_GTH4:
 	case XILINX_XCVR_TYPE_US_GTY4:
-		return xilinx_xcvr_gth34_qpll_read_config(xcvr, drp_port, conf);
+		return xilinx_xcvr_gth34_qpll_read_config(xcvr, sys_clk_sel,
+				drp_port, conf);
 	default:
 		return -EINVAL;
 	}
@@ -912,7 +973,8 @@ int xilinx_xcvr_qpll_read_config(struct xilinx_xcvr *xcvr,
 EXPORT_SYMBOL_GPL(xilinx_xcvr_qpll_read_config);
 
 static int xilinx_xcvr_gth34_qpll_write_config(struct xilinx_xcvr *xcvr,
-	unsigned int drp_port, const struct xilinx_xcvr_qpll_config *conf)
+	unsigned int sys_clk_sel, unsigned int drp_port,
+	const struct xilinx_xcvr_qpll_config *conf)
 {
 	unsigned int refclk, fbdiv;
 	int ret;
@@ -938,13 +1000,23 @@ static int xilinx_xcvr_gth34_qpll_write_config(struct xilinx_xcvr *xcvr,
 		return -EINVAL;
 	}
 
-	ret = xilinx_xcvr_drp_update(xcvr, drp_port, QPLL_FBDIV(conf->qpll),
-		0xff, fbdiv);
+
+	ret = xilinx_xcvr_drp_update(xcvr, drp_port,
+			GTH34_QPLL_FBDIV(xcvr, sys_clk_sel), 0xff, fbdiv);
 	if (ret < 0)
 		return ret;
 
-	return xilinx_xcvr_drp_update(xcvr, drp_port, QPLL_REFCLK_DIV(conf->qpll),
-		0xf80, refclk << 7);
+	if (xcvr->type == XILINX_XCVR_TYPE_US_GTY4) {
+		ret = xilinx_xcvr_drp_update(xcvr, drp_port,
+			GTY4_QPLL_CLKOUT_RATE(xcvr, sys_clk_sel),
+			0x1, conf->qty4_full_rate);
+		if (ret < 0)
+			return ret;
+	}
+
+	return xilinx_xcvr_drp_update(xcvr, drp_port,
+			GTH34_QPLL_REFCLK_DIV(xcvr, sys_clk_sel),
+			0xf80, refclk << 7);
 }
 
 static int xilinx_xcvr_gtx2_qpll_write_config(struct xilinx_xcvr *xcvr,
@@ -1035,7 +1107,8 @@ static int xilinx_xcvr_gtx2_qpll_write_config(struct xilinx_xcvr *xcvr,
 }
 
 int xilinx_xcvr_qpll_write_config(struct xilinx_xcvr *xcvr,
-	unsigned int drp_port, const struct xilinx_xcvr_qpll_config *conf)
+	unsigned int sys_clk_sel, unsigned int drp_port,
+	const struct xilinx_xcvr_qpll_config *conf)
 {
 	switch (xcvr->type) {
 	case XILINX_XCVR_TYPE_S7_GTX2:
@@ -1043,7 +1116,8 @@ int xilinx_xcvr_qpll_write_config(struct xilinx_xcvr *xcvr,
 	case XILINX_XCVR_TYPE_US_GTH3:
 	case XILINX_XCVR_TYPE_US_GTH4:
 	case XILINX_XCVR_TYPE_US_GTY4:
-		return xilinx_xcvr_gth34_qpll_write_config(xcvr, drp_port, conf);
+		return xilinx_xcvr_gth34_qpll_write_config(xcvr, sys_clk_sel,
+				drp_port, conf);
 	default:
 		return -EINVAL;
 	}
@@ -1051,12 +1125,17 @@ int xilinx_xcvr_qpll_write_config(struct xilinx_xcvr *xcvr,
 EXPORT_SYMBOL_GPL(xilinx_xcvr_qpll_write_config);
 
 int xilinx_xcvr_qpll_calc_lane_rate(struct xilinx_xcvr *xcvr,
-	unsigned int refclk_hz, const struct xilinx_xcvr_qpll_config *conf,
+	unsigned int sys_clk_sel, unsigned int refclk_hz,
+	const struct xilinx_xcvr_qpll_config *conf,
 	unsigned int out_div)
 {
 	if (conf->refclk_div == 0 || out_div == 0)
 		return 0;
 
+	if (conf->qty4_full_rate == 1)
+		refclk_hz *= 2;
+
+	/* FIXME: do we need to use sys_clk_sel here ? */
 	return DIV_ROUND_CLOSEST_ULL((unsigned long long)refclk_hz * conf->fb_div,
 			conf->refclk_div * out_div * 1000);
 }

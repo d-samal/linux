@@ -7,6 +7,8 @@
  *
  * https://wiki.analog.com/resources/fpga/docs/axi_adxcvr
  */
+
+#include <asm/io.h>
 #include <linux/module.h>
 #include <linux/delay.h>
 #include <linux/of_device.h>
@@ -289,18 +291,10 @@ static unsigned long adxcvr_clk_recalc_rate(struct clk_hw *hw,
 	} else {
 		struct xilinx_xcvr_qpll_config qpll_conf;
 
-		if ((st->xcvr.type == XILINX_XCVR_TYPE_US_GTH3) ||
-		    (st->xcvr.type == XILINX_XCVR_TYPE_US_GTH4)) {
-			if (st->sys_clk_sel == ADXCVR_GTH_SYSCLK_QPLL1)
-				qpll_conf.qpll = 1;
-			else
-				qpll_conf.qpll = 0;
-		}
-
-		xilinx_xcvr_qpll_read_config(&st->xcvr, ADXCVR_DRP_PORT_COMMON(0),
-			&qpll_conf);
-		return xilinx_xcvr_qpll_calc_lane_rate(&st->xcvr, parent_rate,
-			&qpll_conf, out_div);
+		xilinx_xcvr_qpll_read_config(&st->xcvr, st->sys_clk_sel,
+			ADXCVR_DRP_PORT_COMMON(0), &qpll_conf);
+		return xilinx_xcvr_qpll_calc_lane_rate(&st->xcvr,
+			st->sys_clk_sel, parent_rate, &qpll_conf, out_div);
 	}
 }
 
@@ -323,8 +317,8 @@ static long adxcvr_clk_round_rate(struct clk_hw *hw,
 		ret = xilinx_xcvr_calc_cpll_config(&st->xcvr, *prate, rate,
 			NULL, NULL);
 	else
-		ret = xilinx_xcvr_calc_qpll_config(&st->xcvr, *prate, rate,
-			NULL, NULL);
+		ret = xilinx_xcvr_calc_qpll_config(&st->xcvr,
+				st->sys_clk_sel, *prate, rate,	NULL, NULL);
 
 	return ret < 0 ? ret : rate;
 }
@@ -350,18 +344,11 @@ static int adxcvr_clk_set_rate(struct clk_hw *hw,
 		ret = xilinx_xcvr_calc_cpll_config(&st->xcvr, parent_rate, rate,
 			&cpll_conf, &out_div);
 	else
-		ret = xilinx_xcvr_calc_qpll_config(&st->xcvr, parent_rate, rate,
-			&qpll_conf, &out_div);
+		ret = xilinx_xcvr_calc_qpll_config(&st->xcvr, st->sys_clk_sel,
+			parent_rate, rate, &qpll_conf, &out_div);
 	if (ret < 0)
 		return ret;
 
-	if ((st->xcvr.type == XILINX_XCVR_TYPE_US_GTH3) ||
-	    (st->xcvr.type == XILINX_XCVR_TYPE_US_GTH4)) {
-		if (st->sys_clk_sel == ADXCVR_GTH_SYSCLK_QPLL1)
-			qpll_conf.qpll = 1;
-		else
-			qpll_conf.qpll = 0;
-	}
 
 	for (i = 0; i < st->num_lanes; i++) {
 
@@ -370,7 +357,8 @@ static int adxcvr_clk_set_rate(struct clk_hw *hw,
 							    ADXCVR_DRP_PORT_CHANNEL(i), &cpll_conf);
 		else if (i % 4 == 0)
 			ret = xilinx_xcvr_qpll_write_config(&st->xcvr,
-							    ADXCVR_DRP_PORT_COMMON(i), &qpll_conf);
+					st->sys_clk_sel,
+					ADXCVR_DRP_PORT_COMMON(i), &qpll_conf);
 		if (ret < 0)
 			return ret;
 

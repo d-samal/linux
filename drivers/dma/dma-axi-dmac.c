@@ -896,31 +896,34 @@ static int axi_dmac_probe(struct platform_device *pdev)
 	struct resource *res;
 	int ret;
 
+	printk("Here I am probing the axi_dmac driver 1: \n");  //sjk
+
 	dmac = devm_kzalloc(&pdev->dev, sizeof(*dmac), GFP_KERNEL);
 	if (!dmac)
 		return -ENOMEM;
-
+	printk("Here I am probing the axi_dmac driver 2: \n");  //sjk
 	dmac->irq = platform_get_irq(pdev, 0);
 	if (dmac->irq < 0)
 		return dmac->irq;
+	printk("Here I am probing the axi_dmac driver 3: \n");  //sjk
 	if (dmac->irq == 0)
 		return -EINVAL;
-
+	printk("Here I am probing the axi_dmac driver 4: \n");  //sjk
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	dmac->base = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(dmac->base))
 		return PTR_ERR(dmac->base);
-
+	printk("Here I am probing the axi_dmac driver 5: \n");  //sjk
 	dmac->clk = devm_clk_get(&pdev->dev, NULL);
 	if (IS_ERR(dmac->clk))
 		return PTR_ERR(dmac->clk);
-
+	printk("Here I am probing the axi_dmac driver 6: \n");  //sjk
 	INIT_LIST_HEAD(&dmac->chan.active_descs);
 
 	of_channels = of_get_child_by_name(pdev->dev.of_node, "adi,channels");
 	if (of_channels == NULL)
 		return -ENODEV;
-
+	printk("Here I am probing the axi_dmac driver 7: \n");  //sjk
 	for_each_child_of_node(of_channels, of_chan) {
 		ret = axi_dmac_parse_chan_dt(of_chan, &dmac->chan);
 		if (ret) {
@@ -930,7 +933,7 @@ static int axi_dmac_probe(struct platform_device *pdev)
 		}
 	}
 	of_node_put(of_channels);
-
+	printk("Here I am probing the axi_dmac driver 8: \n");  //sjk
 	pdev->dev.dma_parms = &dmac->dma_parms;
 	dma_set_max_seg_size(&pdev->dev, UINT_MAX);
 
@@ -961,11 +964,11 @@ static int axi_dmac_probe(struct platform_device *pdev)
 	ret = clk_prepare_enable(dmac->clk);
 	if (ret < 0)
 		return ret;
-
+	printk("Here I am probing the axi_dmac driver 9: \n");  //sjk
 	ret = axi_dmac_detect_caps(dmac);
 	if (ret)
 		goto err_clk_disable;
-
+	printk("Here I am probing the axi_dmac driver 10: \n");  //sjk
 	dma_dev->copy_align = (dmac->chan.address_align_mask + 1);
 
 	axi_dmac_write(dmac, AXI_DMAC_REG_IRQ_MASK, 0x00);
@@ -973,17 +976,17 @@ static int axi_dmac_probe(struct platform_device *pdev)
 	ret = dma_async_device_register(dma_dev);
 	if (ret)
 		goto err_clk_disable;
-
+	printk("Here I am probing the axi_dmac driver 11: \n");  //sjk
 	ret = of_dma_controller_register(pdev->dev.of_node,
 		of_dma_xlate_by_chan_id, dma_dev);
 	if (ret)
 		goto err_unregister_device;
-
+	printk("Here I am probing the axi_dmac driver 12: \n");  //sjk
 	ret = request_irq(dmac->irq, axi_dmac_interrupt_handler, IRQF_SHARED,
 		dev_name(&pdev->dev), dmac);
 	if (ret)
 		goto err_unregister_of;
-
+	printk("Here I am probing the axi_dmac driver 13: \n");  //sjk
 	platform_set_drvdata(pdev, dmac);
 
 	devm_regmap_init_mmio(&pdev->dev, dmac->base, &axi_dmac_regmap_config);
@@ -1023,7 +1026,7 @@ err_unregister_device:
 	dma_async_device_unregister(&dmac->dma_dev);
 err_clk_disable:
 	clk_disable_unprepare(dmac->clk);
-
+	printk("Here I am probing the axi_dmac driver 6: \n");  //sjk
 	return ret;
 }
 

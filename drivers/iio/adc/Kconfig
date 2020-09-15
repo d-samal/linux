@@ -243,6 +243,16 @@ config AD9963
 	  To compile this driver as a module, choose M here: the module will be
 	  called ad9963.
 
+config ADAR1000
+	tristate "Analog Devices ADAR1000 Beamformer driver"
+	depends on SPI
+	help
+	  Say yes here to build support for Analog Devices ADAR1000 beamformer
+	  driver.
+
+	  To compile this driver as a module, choose M here: the module will be
+	  called adar1000.
+
 config ADM1177
 	tristate "Analog Devices ADM1177 Digital Power Monitor driver"
 	depends on I2C
@@ -281,7 +291,7 @@ config AT91_ADC
 config CF_AXI_ADC
 	tristate "Analog Devices High-Speed AXI ADC driver core"
 	select IIO_BUFFER
-	select IIO_HW_CONSUMER
+	select IIO_BUFFER_HW_CONSUMER
 	select IIO_BUFFER_DMAENGINE
 	help
 	  Say yes here to build support for Analog Devices AD9467 and AD9643,
@@ -292,6 +302,15 @@ config CF_AXI_ADC
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called cf_axi_adc.
+
+config AD9081
+	tristate "Analog Devices AD9081 and similar Mixed Signal Front End (MxFE)"
+	depends on SPI
+	select CF_AXI_ADC
+	help
+	  Say yes here to build support for Analog Devices:
+	  AD9081, AD9082 mixed signal front end (MxFE).
+	  Provides direct access via sysfs.
 
 config AD9208
 	tristate "Analog Devices AD9208 and similar high speed ADCs"

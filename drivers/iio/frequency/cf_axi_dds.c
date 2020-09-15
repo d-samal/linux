@@ -40,6 +40,41 @@
 
 static const unsigned int interpolation_factors_available[] = {1, 8};
 
+static const char * const dds_extend_names[] = {
+	"TX1_I_F1", "TX1_I_F2", "TX1_Q_F1", "TX1_Q_F2",
+	"TX2_I_F1", "TX2_I_F2", "TX2_Q_F1", "TX2_Q_F2",
+	"TX3_I_F1", "TX3_I_F2", "TX3_Q_F1", "TX3_Q_F2",
+	"TX4_I_F1", "TX4_I_F2", "TX4_Q_F1", "TX4_Q_F2",
+	"TX5_I_F1", "TX5_I_F2", "TX5_Q_F1", "TX5_Q_F2",
+	"TX6_I_F1", "TX6_I_F2", "TX6_Q_F1", "TX6_Q_F2",
+	"TX7_I_F1", "TX7_I_F2", "TX7_Q_F1", "TX7_Q_F2",
+	"TX8_I_F1", "TX8_I_F2", "TX8_Q_F1", "TX8_Q_F2",
+	"TX9_I_F1", "TX9_I_F2", "TX9_Q_F1", "TX9_Q_F2",
+	"TX10_I_F1", "TX10_I_F2", "TX10_Q_F1", "TX10_Q_F2",
+	"TX11_I_F1", "TX11_I_F2", "TX11_Q_F1", "TX11_Q_F2",
+	"TX12_I_F1", "TX12_I_F2", "TX12_Q_F1", "TX12_Q_F2",
+	"TX13_I_F1", "TX13_I_F2", "TX13_Q_F1", "TX13_Q_F2",
+	"TX14_I_F1", "TX14_I_F2", "TX14_Q_F1", "TX14_Q_F2",
+	"TX15_I_F1", "TX15_I_F2", "TX15_Q_F1", "TX15_Q_F2",
+	"TX16_I_F1", "TX16_I_F2", "TX16_Q_F1", "TX16_Q_F2",
+	"TX17_I_F1", "TX17_I_F2", "TX17_Q_F1", "TX17_Q_F2",
+	"TX18_I_F1", "TX18_I_F2", "TX18_Q_F1", "TX18_Q_F2",
+	"TX19_I_F1", "TX19_I_F2", "TX19_Q_F1", "TX19_Q_F2",
+	"TX20_I_F1", "TX20_I_F2", "TX20_Q_F1", "TX20_Q_F2",
+	"TX21_I_F1", "TX21_I_F2", "TX21_Q_F1", "TX21_Q_F2",
+	"TX22_I_F1", "TX22_I_F2", "TX22_Q_F1", "TX22_Q_F2",
+	"TX23_I_F1", "TX23_I_F2", "TX23_Q_F1", "TX23_Q_F2",
+	"TX24_I_F1", "TX24_I_F2", "TX24_Q_F1", "TX24_Q_F2",
+	"TX25_I_F1", "TX25_I_F2", "TX25_Q_F1", "TX25_Q_F2",
+	"TX26_I_F1", "TX26_I_F2", "TX26_Q_F1", "TX26_Q_F2",
+	"TX27_I_F1", "TX27_I_F2", "TX27_Q_F1", "TX27_Q_F2",
+	"TX28_I_F1", "TX28_I_F2", "TX28_Q_F1", "TX28_Q_F2",
+	"TX29_I_F1", "TX29_I_F2", "TX29_Q_F1", "TX29_Q_F2",
+	"TX30_I_F1", "TX30_I_F2", "TX30_Q_F1", "TX30_Q_F2",
+	"TX31_I_F1", "TX31_I_F2", "TX31_Q_F1", "TX31_Q_F2",
+	"TX32_I_F1", "TX32_I_F2", "TX32_Q_F1", "TX32_Q_F2",
+};
+
 struct cf_axi_dds_state {
 	struct device			*dev_spi;
 	struct clk			*clk;
@@ -60,11 +95,12 @@ struct cf_axi_dds_state {
 	void __iomem			*master_regs;
 	u64				dac_clk;
 	unsigned int			ddr_dds_interp_en;
-	unsigned int			cached_freq[16];
+	unsigned int			cached_freq[AXIDDS_MAX_NUM_DDS_CHAN];
 	unsigned int			version;
 	unsigned int			have_slave_channels;
 	unsigned int			interpolation_factor;
 	struct notifier_block		clk_nb;
+	struct cf_axi_dds_chip_info	chip_info_generated;
 };
 
 bool cf_axi_dds_dma_fifo_en(struct cf_axi_dds_state *st)
@@ -109,7 +145,7 @@ EXPORT_SYMBOL(dds_master_write);
 
 static int cf_axi_dds_to_signed_mag_fmt(int val, int val2, unsigned int *res)
 {
-	unsigned i;
+	unsigned int i;
 	u64 val64;
 
 	/*  format is 1.1.14 (sign, integer and fractional bits) */
@@ -140,7 +176,7 @@ static int cf_axi_dds_to_signed_mag_fmt(int val, int val2, unsigned int *res)
 	return 0;
 }
 
-static int cf_axi_dds_signed_mag_fmt_to_iio(unsigned val, int *r_val,
+static int cf_axi_dds_signed_mag_fmt_to_iio(unsigned int val, int *r_val,
 	int *r_val2)
 {
 	u64 val64;
@@ -169,25 +205,6 @@ static int cf_axi_dds_signed_mag_fmt_to_iio(unsigned val, int *r_val,
 	return IIO_VAL_INT_PLUS_MICRO;
 }
 
-#ifdef CF_AXI_DDS_HAVE_TWOS_FMT
-static unsigned cf_axi_dds_to_twos_fmt(int val, int val2)
-{
-	s64 sval64;
-	if (val < 0)
-		val2 = -val2;
-	sval64 = ((val * 1000000ULL + (long long)val2) * 0x4000);
-	return div_s64(sval64, 1000000UL);
-}
-
-static int cf_axi_dds_twos_fmt_to_iio(s16 val, int *r_val, int *r_val2)
-{
-	*r_val = val;
-	*r_val2 = 14;
-
-	return IIO_VAL_FRACTIONAL_LOG2;
-}
-#endif
-
 int cf_axi_dds_pl_ddr_fifo_ctrl(struct cf_axi_dds_state *st, bool enable)
 {
 	enum fifo_ctrl mode;
@@ -208,7 +225,8 @@ int cf_axi_dds_pl_ddr_fifo_ctrl(struct cf_axi_dds_state *st, bool enable)
 	return ret;
 }
 
-static int cf_axi_get_parent_sampling_frequency(struct cf_axi_dds_state *st, unsigned long *freq)
+static int cf_axi_get_parent_sampling_frequency(struct cf_axi_dds_state *st,
+						unsigned long *freq)
 {
 	struct cf_axi_converter *conv;
 
@@ -225,30 +243,43 @@ static int cf_axi_get_parent_sampling_frequency(struct cf_axi_dds_state *st, uns
 	return 0;
 }
 
+
+void __cf_axi_dds_datasel(struct cf_axi_dds_state *st,
+	int channel, enum dds_data_select sel)
+{
+	unsigned int val;
+
+	if ((unsigned int)channel > (st->have_slave_channels - 1)) {
+		val = dds_slave_read(st,
+			ADI_REG_CHAN_CNTRL_7(channel -
+			st->have_slave_channels));
+
+		val &= ~ADI_DAC_DDS_SEL(~0);
+		val |= ADI_DAC_DDS_SEL(sel);
+
+		dds_slave_write(st,
+			ADI_REG_CHAN_CNTRL_7(channel -
+			st->have_slave_channels), val);
+	} else {
+		val = dds_read(st, ADI_REG_CHAN_CNTRL_7(channel));
+
+		val &= ~ADI_DAC_DDS_SEL(~0);
+		val |= ADI_DAC_DDS_SEL(sel);
+
+		dds_write(st, ADI_REG_CHAN_CNTRL_7(channel), val);
+	}
+}
+
 int cf_axi_dds_datasel(struct cf_axi_dds_state *st,
 			       int channel, enum dds_data_select sel)
 {
-	if (channel < 0) { /* ALL */
-		unsigned int i;
+	unsigned int i;
 
-		for (i = 0; i < st->chip_info->num_buf_channels; i++) {
-			if (i > (st->have_slave_channels - 1))
-				dds_slave_write(st,
-					ADI_REG_CHAN_CNTRL_7(i -
-					st->have_slave_channels), sel);
-			else
-				dds_write(st,
-				ADI_REG_CHAN_CNTRL_7(i), sel);
-		}
-	} else {
-		if ((unsigned int)channel > (st->have_slave_channels - 1))
-			dds_slave_write(st,
-				ADI_REG_CHAN_CNTRL_7(channel -
-				st->have_slave_channels), sel);
-		else
-			dds_write(st, ADI_REG_CHAN_CNTRL_7(channel),
-				  sel);
-	}
+	if (channel < 0) /* ALL */
+		for (i = 0; i < st->chip_info->num_buf_channels; i++)
+			__cf_axi_dds_datasel(st, i, sel);
+	else
+		__cf_axi_dds_datasel(st, channel, sel);
 
 	return 0;
 }
@@ -261,10 +292,11 @@ static enum dds_data_select cf_axi_dds_get_datasel(struct cf_axi_dds_state *st,
 		channel = 0;
 
 	if ((unsigned int)channel > (st->have_slave_channels - 1))
-		return dds_slave_read(st,
-			ADI_REG_CHAN_CNTRL_7(channel - st->have_slave_channels));
+		return ADI_TO_DAC_DDS_SEL(dds_slave_read(st,
+			ADI_REG_CHAN_CNTRL_7(channel -
+			st->have_slave_channels)));
 
-	return dds_read(st, ADI_REG_CHAN_CNTRL_7(channel));
+	return ADI_TO_DAC_DDS_SEL(dds_read(st, ADI_REG_CHAN_CNTRL_7(channel)));
 }
 
 static int cf_axi_dds_sync_frame(struct iio_dev *indio_dev)
@@ -272,7 +304,7 @@ static int cf_axi_dds_sync_frame(struct iio_dev *indio_dev)
 	struct cf_axi_dds_state *st = iio_priv(indio_dev);
 	struct cf_axi_converter *conv;
 	int stat;
-	static int retry = 0;
+	static int retry;
 
 	msleep(10); /* Wait until clocks are stable */
 
@@ -313,7 +345,7 @@ static int cf_axi_dds_rate_change(struct notifier_block *nb,
 	struct cf_axi_dds_state *st =
 		container_of(nb, struct cf_axi_dds_state, clk_nb);
 	struct iio_dev *indio_dev = iio_priv_to_dev(st);
-	unsigned reg, i;
+	unsigned int reg, i;
 	unsigned long long val64;
 
 	st->dac_clk = cnd->new_rate;
@@ -336,11 +368,12 @@ static int cf_axi_dds_rate_change(struct notifier_block *nb,
 	return NOTIFY_OK;
 }
 
-static void cf_axi_dds_set_sed_pattern(struct iio_dev *indio_dev, unsigned chan,
-				      unsigned pat1, unsigned pat2)
+static void cf_axi_dds_set_sed_pattern(struct iio_dev *indio_dev,
+				       unsigned int chan, unsigned int pat1,
+				       unsigned int pat2)
 {
 	struct cf_axi_dds_state *st = iio_priv(indio_dev);
-	unsigned ctrl;
+	unsigned int ctrl;
 
 	dds_write(st, ADI_REG_CHAN_CNTRL_5(chan),
 		ADI_TO_DDS_PATT_1(pat1) | ADI_DDS_PATT_2(pat2));
@@ -354,7 +387,8 @@ static void cf_axi_dds_set_sed_pattern(struct iio_dev *indio_dev, unsigned chan,
 }
 
 static int cf_axi_dds_default_setup(struct cf_axi_dds_state *st, u32 chan,
-				    u32 phase, u32 freq, u32 scale) {
+				    u32 phase, u32 freq, u32 scale)
+{
 
 	unsigned long long val64;
 	u32 val;
@@ -372,15 +406,6 @@ static int cf_axi_dds_default_setup(struct cf_axi_dds_state *st, u32 chan,
 	dds_write(st, ADI_REG_CHAN_CNTRL_1_IIOCHAN(chan), ADI_DDS_SCALE(scale));
 	dds_write(st, ADI_REG_CHAN_CNTRL_2_IIOCHAN(chan), val);
 
-	if (chan % 2)
-		dds_write(st, ADI_REG_CHAN_CNTRL_8(chan),
-			ADI_IQCOR_COEFF_2(0x4000) |
-			ADI_IQCOR_COEFF_1(0));
-	else
-		dds_write(st, ADI_REG_CHAN_CNTRL_8(chan),
-			ADI_IQCOR_COEFF_2(0) |
-			ADI_IQCOR_COEFF_1(0x4000));
-
 	return 0;
 }
 
@@ -391,23 +416,23 @@ static int cf_axi_interpolation_set(struct cf_axi_dds_state *st,
 	int ret = 0;
 
 	switch (interpolation_factor) {
-		case 1:
-		case 8:
-			reg = dds_read(st, ADI_REG_DAC_GP_CONTROL);
+	case 1:
+	case 8:
+		reg = dds_read(st, ADI_REG_DAC_GP_CONTROL);
 
-			if (st->interpolation_factor == 8)
-				reg |= BIT(0);
-			else
-				reg &= ~BIT(0);
+		if (st->interpolation_factor == 8)
+			reg |= BIT(0);
+		else
+			reg &= ~BIT(0);
 
-			if (st->interpolation_gpio)
-				gpiod_set_value(st->interpolation_gpio,
-						reg & BIT(0));
-			else
-				dds_write(st, ADI_REG_DAC_GP_CONTROL, reg);
-			break;
-		default:
-			ret = -EINVAL;
+		if (st->interpolation_gpio)
+			gpiod_set_value(st->interpolation_gpio,
+					reg & BIT(0));
+		else
+			dds_write(st, ADI_REG_DAC_GP_CONTROL, reg);
+		break;
+	default:
+		ret = -EINVAL;
 	}
 
 	return ret;
@@ -482,6 +507,21 @@ static const struct attribute_group cf_axi_int_attribute_group = {
 	.attrs = cf_axi_attributes,
 };
 
+static int cf_axi_dds_reg_index(struct iio_chan_spec const *chan)
+{
+	if (chan->modified)
+		switch (chan->channel2) {
+		case IIO_MOD_I:
+			return chan->channel * 2;
+		case IIO_MOD_Q:
+			return chan->channel * 2 + 1;
+		default:
+			return chan->channel;
+		}
+
+	return chan->channel;
+}
+
 static int cf_axi_dds_read_raw(struct iio_dev *indio_dev,
 			   struct iio_chan_spec const *chan,
 			   int *val,
@@ -492,7 +532,7 @@ static int cf_axi_dds_read_raw(struct iio_dev *indio_dev,
 	struct cf_axi_converter *conv;
 	unsigned long long val64;
 	unsigned long freq;
-	unsigned reg, phase = 0;
+	unsigned int reg, channel, phase = 0;
 	int ret;
 
 	mutex_lock(&indio_dev->mlock);
@@ -511,13 +551,15 @@ static int cf_axi_dds_read_raw(struct iio_dev *indio_dev,
 		if (chan->type == IIO_VOLTAGE) {
 			if (!st->standalone) {
 				conv = to_converter(st->dev_spi);
-				ret = conv->read_raw(indio_dev, chan, val, val2, m);
+				ret = conv->read_raw(indio_dev,
+						     chan, val, val2, m);
 				mutex_unlock(&indio_dev->mlock);
 				return ret;
 			}
 		}
 
-		reg = ADI_TO_DDS_SCALE(dds_read(st, ADI_REG_CHAN_CNTRL_1_IIOCHAN(chan->channel)));
+		reg = ADI_TO_DDS_SCALE(dds_read(st,
+			ADI_REG_CHAN_CNTRL_1_IIOCHAN(chan->channel)));
 		cf_axi_dds_signed_mag_fmt_to_iio(reg, val, val2);
 		mutex_unlock(&indio_dev->mlock);
 		return IIO_VAL_INT_PLUS_MICRO;
@@ -551,15 +593,15 @@ static int cf_axi_dds_read_raw(struct iio_dev *indio_dev,
 		phase = 1;
 		/* fall-through */
 	case IIO_CHAN_INFO_CALIBSCALE:
+		channel = cf_axi_dds_reg_index(chan);
 
-		reg = dds_read(st, ADI_REG_CHAN_CNTRL_8(chan->channel));
+		reg = dds_read(st, ADI_REG_CHAN_CNTRL_8(channel));
 		/*  format is 1.1.14 (sign, integer and fractional bits) */
 
-		if (!((phase + chan->channel) % 2)) {
+		if (!((phase + channel) % 2))
 			reg = ADI_TO_IQCOR_COEFF_1(reg);
-		} else {
+		else
 			reg = ADI_TO_IQCOR_COEFF_2(reg);
-		}
 
 		mutex_unlock(&indio_dev->mlock);
 		return cf_axi_dds_signed_mag_fmt_to_iio(reg, val, val2);
@@ -586,7 +628,7 @@ static int cf_axi_dds_write_raw(struct iio_dev *indio_dev,
 	struct cf_axi_dds_state *st = iio_priv(indio_dev);
 	struct cf_axi_converter *conv;
 	unsigned long long val64;
-	unsigned reg, i, phase = 0;
+	unsigned int reg, i, channel, phase = 0;
 	int ret = 0;
 
 	if (st->dev_spi)
@@ -605,14 +647,16 @@ static int cf_axi_dds_write_raw(struct iio_dev *indio_dev,
 
 		st->enable = !!val;
 		cf_axi_dds_start_sync(st);
-		cf_axi_dds_datasel(st, -1, st->enable ? DATA_SEL_DDS : DATA_SEL_ZERO);
+		cf_axi_dds_datasel(st, -1,
+			st->enable ? DATA_SEL_DDS : DATA_SEL_ZERO);
 
 		break;
 	case IIO_CHAN_INFO_SCALE:
 		if (chan->type == IIO_VOLTAGE) {
 			if (!st->standalone) {
 				if (!IS_ERR(conv))
-					ret = conv->write_raw(indio_dev, chan, val, val2, mask);
+					ret = conv->write_raw(indio_dev,
+						chan, val, val2, mask);
 				mutex_unlock(&indio_dev->mlock);
 				return ret;
 			}
@@ -641,7 +685,8 @@ static int cf_axi_dds_write_raw(struct iio_dev *indio_dev,
 		val64 = (unsigned long long)val2 * 0x4000UL + (1000000UL / 2);
 		do_div(val64, 1000000UL);
 		i |= val64;
-		dds_write(st, ADI_REG_CHAN_CNTRL_1_IIOCHAN(chan->channel), ADI_DDS_SCALE(i));
+		dds_write(st, ADI_REG_CHAN_CNTRL_1_IIOCHAN(chan->channel),
+			  ADI_DDS_SCALE(i));
 		cf_axi_dds_start_sync(st);
 		break;
 	case IIO_CHAN_INFO_FREQUENCY:
@@ -714,14 +759,15 @@ static int cf_axi_dds_write_raw(struct iio_dev *indio_dev,
 		phase = 1;
 		/* fall-through */
 	case IIO_CHAN_INFO_CALIBSCALE:
+		channel = cf_axi_dds_reg_index(chan);
 
 		ret = cf_axi_dds_to_signed_mag_fmt(val, val2, &i);
 		if (ret < 0)
 			break;
 
-		reg = dds_read(st, ADI_REG_CHAN_CNTRL_8(chan->channel));
+		reg = dds_read(st, ADI_REG_CHAN_CNTRL_8(channel));
 
-		if (!((chan->channel + phase) % 2)) {
+		if (!((channel + phase) % 2)) {
 			reg &= ~ADI_IQCOR_COEFF_1(~0);
 			reg |= ADI_IQCOR_COEFF_1(i);
 		} else {
@@ -729,8 +775,9 @@ static int cf_axi_dds_write_raw(struct iio_dev *indio_dev,
 			reg |= ADI_IQCOR_COEFF_2(i);
 		}
 
-		dds_write(st, ADI_REG_CHAN_CNTRL_8(chan->channel), reg);
-		dds_write(st, ADI_REG_CHAN_CNTRL_6(chan->channel), ADI_IQCOR_ENB);
+		dds_write(st, ADI_REG_CHAN_CNTRL_8(channel), reg);
+		dds_write(st, ADI_REG_CHAN_CNTRL_6(channel),
+			  ADI_IQCOR_ENB);
 		break;
 	default:
 		if (!IS_ERR(conv))
@@ -747,8 +794,8 @@ err_unlock:
 }
 
 static int cf_axi_dds_reg_access(struct iio_dev *indio_dev,
-			      unsigned reg, unsigned writeval,
-			      unsigned *readval)
+				 unsigned int reg, unsigned int writeval,
+				 unsigned int *readval)
 {
 	struct cf_axi_dds_state *st = iio_priv(indio_dev);
 	struct cf_axi_converter *conv = ERR_PTR(-ENODEV);
@@ -775,7 +822,8 @@ static int cf_axi_dds_reg_access(struct iio_dev *indio_dev,
 			if (IS_ERR(conv))
 				ret  = PTR_ERR(conv);
 			else
-				ret = conv->write(conv->spi, reg, writeval & 0xFF);
+				ret = conv->write(conv->spi,
+						  reg, writeval & 0xFF);
 		}
 	} else {
 		if ((reg & DEBUGFS_DRA_PCORE_REG_MAGIC) ||
@@ -804,15 +852,14 @@ static int cf_axi_dds_update_scan_mode(struct iio_dev *indio_dev,
 	const unsigned long *scan_mask)
 {
 	struct cf_axi_dds_state *st = iio_priv(indio_dev);
-	unsigned i, sel;
+	unsigned int i, sel;
 
 	for (i = 0; i < indio_dev->masklength; i++) {
 
-		if (test_bit(i, scan_mask)) {
+		if (test_bit(i, scan_mask))
 			sel = DATA_SEL_DMA;
-		} else {
+		else
 			sel = DATA_SEL_DDS;
-		}
 
 		cf_axi_dds_datasel(st, i, sel);
 	}
@@ -838,7 +885,7 @@ static const struct iio_chan_spec_ext_info cf_axi_dds_ext_info[] = {
 };
 
 static void cf_axi_dds_update_chan_spec(struct cf_axi_dds_state *st,
-			struct iio_chan_spec *channels, unsigned num)
+			struct iio_chan_spec *channels, unsigned int num)
 {
 	unsigned int i;
 
@@ -1375,7 +1422,8 @@ static struct device *dds_converter_find(struct device *dev)
 	if (!conv_of)
 		return ERR_PTR(-ENODEV);
 
-	conv_dev = bus_find_device(&spi_bus_type, NULL, conv_of, dds_converter_match);
+	conv_dev = bus_find_device(&spi_bus_type, NULL,
+				   conv_of, dds_converter_match);
 	of_node_put(conv_of);
 	if (!conv_dev)
 		return ERR_PTR(-EPROBE_DEFER);
@@ -1388,13 +1436,185 @@ static void dds_converter_put(struct device *conv_dev)
 	put_device(conv_dev);
 }
 
+static ssize_t cf_axi_dds_ext_info_read(struct iio_dev *indio_dev,
+				uintptr_t private,
+				const struct iio_chan_spec *chan, char *buf)
+{
+	struct cf_axi_dds_state *st = iio_priv(indio_dev);
+	long long val;
+	unsigned int index;
+	int ret = 0;
+
+	mutex_lock(&indio_dev->mlock);
+
+	switch (private) {
+	case CHANNEL_XBAR:
+		index = cf_axi_dds_reg_index(chan);
+		val = dds_read(st, ADI_REG_CHAN_CNTRL_7(index));
+
+		if (val & ADI_DAC_ENABLE_MASK)
+			val = ADI_TO_DAC_SRC_CH_SEL(val);
+		else
+			val = index;
+		break;
+	default:
+		ret = -EINVAL;
+	}
+
+	mutex_unlock(&indio_dev->mlock);
+
+	if (ret == 0)
+		ret = sprintf(buf, "%lld\n", val);
+
+	return ret;
+}
+
+static ssize_t cf_axi_dds_ext_info_write(struct iio_dev *indio_dev,
+				uintptr_t private,
+				const struct iio_chan_spec *chan,
+				const char *buf, size_t len)
+{
+	struct cf_axi_dds_state *st = iio_priv(indio_dev);
+	long long readin;
+	unsigned int index, val;
+	int ret;
+
+	mutex_lock(&indio_dev->mlock);
+
+	switch (private) {
+	case CHANNEL_XBAR:
+		ret = kstrtoll(buf, 10, &readin);
+		if (ret)
+			goto out;
+
+		if (readin >= st->chip_info->num_buf_channels) {
+			ret = -EINVAL;
+			goto out;
+		}
+
+		index = cf_axi_dds_reg_index(chan);
+
+		val = dds_read(st, ADI_REG_CHAN_CNTRL_7(index));
+
+		val &= ADI_DAC_DDS_SEL(~0);
+		val |= ADI_DAC_SRC_CH_SEL(readin);
+
+		if (readin != index)
+			val |= ADI_DAC_ENABLE_MASK;
+
+		dds_write(st, ADI_REG_CHAN_CNTRL_7(index), val);
+
+		break;
+	default:
+		ret = -EINVAL;
+	}
+
+out:
+	mutex_unlock(&indio_dev->mlock);
+
+	return ret ? ret : len;
+}
+
+static struct iio_chan_spec_ext_info axidds_ext_info[] = {
+	{
+		.name = "channel_crossbar_select",
+		.read = cf_axi_dds_ext_info_read,
+		.write = cf_axi_dds_ext_info_write,
+		.shared = false,
+		.private = CHANNEL_XBAR,
+	},
+	{},
+};
+
+static int cf_axi_dds_setup_chip_info_tbl(struct cf_axi_dds_state *st,
+					  const char *name, bool complex)
+{
+	u32 i, c, reg, m, n, np;
+
+	reg = dds_read(st, ADI_REG_TPL_DESCRIPTOR_1);
+	m = ADI_TO_JESD_M(reg);
+
+	if (m == 0 || m > ARRAY_SIZE(st->chip_info_generated.channel))
+		return -EINVAL;
+
+	reg = dds_read(st, ADI_REG_TPL_DESCRIPTOR_2);
+	n = ADI_TO_JESD_N(reg);
+	np = ADI_TO_JESD_NP(reg);
+
+	reg = dds_read(st, ADI_REG_CONFIG);
+
+	for (c = 0, i = 0; i < m; i++, c++) {
+		st->chip_info_generated.channel[c].type = IIO_VOLTAGE;
+		st->chip_info_generated.channel[c].output = 1;
+		st->chip_info_generated.channel[c].indexed = 1;
+		st->chip_info_generated.channel[c].modified = complex ? 1 : 0;
+		st->chip_info_generated.channel[c].channel =
+			complex ? i / 2 : i;
+		st->chip_info_generated.channel[c].channel2 =
+			(i & 1) ? IIO_MOD_Q : IIO_MOD_I;
+		st->chip_info_generated.channel[c].scan_index = i;
+		st->chip_info_generated.channel[c].info_mask_shared_by_type =
+			BIT(IIO_CHAN_INFO_SAMP_FREQ);
+
+		if (!(reg & ADI_IQCORRECTION_DISABLE))
+			st->chip_info_generated.channel[c].info_mask_separate =
+			BIT(IIO_CHAN_INFO_CALIBSCALE) |
+			BIT(IIO_CHAN_INFO_CALIBPHASE);
+
+		if (reg & ADI_XBAR_ENABLE)
+			st->chip_info_generated.channel[c].ext_info =
+			axidds_ext_info;
+
+		st->chip_info_generated.channel[c].scan_type.realbits = n;
+		st->chip_info_generated.channel[c].scan_type.storagebits = np;
+		st->chip_info_generated.channel[c].scan_type.sign = 's';
+	}
+
+	if (!(reg & ADI_DDS_DISABLE)) {
+		for (i = 0; i < 2 * m; i++, c++) {
+			if (c > ARRAY_SIZE(st->chip_info_generated.channel))
+				return -EINVAL;
+			st->chip_info_generated.channel[c].type =
+				IIO_ALTVOLTAGE;
+			st->chip_info_generated.channel[c].output = 1;
+			st->chip_info_generated.channel[c].indexed = 1;
+			st->chip_info_generated.channel[c].channel = i;
+			st->chip_info_generated.channel[c].scan_index = -1;
+			st->chip_info_generated.channel
+				[c].info_mask_shared_by_type =
+				BIT(IIO_CHAN_INFO_SAMP_FREQ);
+			st->chip_info_generated.channel[c].info_mask_separate =
+				BIT(IIO_CHAN_INFO_RAW) |
+				BIT(IIO_CHAN_INFO_SCALE) |
+				BIT(IIO_CHAN_INFO_PHASE) |
+				BIT(IIO_CHAN_INFO_FREQUENCY);
+
+			st->chip_info_generated.channel[c].ext_info =
+				cf_axi_dds_ext_info;
+			if (i < ARRAY_SIZE(dds_extend_names))
+				st->chip_info_generated.channel[
+					c].extend_name = dds_extend_names[i];
+		}
+	}
+
+	st->chip_info_generated.num_channels = c;
+	st->chip_info_generated.num_dp_disable_channels = m;
+	st->chip_info_generated.num_dds_channels = i;
+	st->chip_info_generated.num_buf_channels = m;
+	st->chip_info_generated.name = name;
+
+	return 0;
+}
+
 struct axidds_core_info {
 	unsigned int version;
 	bool standalone;
 	bool rate_format_skip_en;
+	bool complex_modified;
 	struct cf_axi_dds_chip_info *chip_info;
 	unsigned int data_format;
 	unsigned int rate;
+	const char *name;
 };
 
 static const struct axidds_core_info ad9122_6_00_a_info = {
@@ -1464,6 +1684,13 @@ static const struct axidds_core_info ad9963_1_00_a_info = {
 	.chip_info = &cf_axi_dds_chip_info_ad9936,
 };
 
+static const struct axidds_core_info ad9081_1_00_a_info = {
+	.version = ADI_AXI_PCORE_VER(9, 1, 'b'),
+	.name = "AD9081",
+	.standalone = true,
+	.complex_modified = true,
+};
+
 /* Match table for of_platform binding */
 static const struct of_device_id cf_axi_dds_of_match[] = {
 	{ .compatible = "adi,axi-ad9122-6.00.a", .data = &ad9122_6_00_a_info},
@@ -1492,12 +1719,15 @@ static const struct of_device_id cf_axi_dds_of_match[] = {
 	}, {
 	    .compatible = "adi,axi-ad9162-1.0",
 	    .data = &ad9162_1_00_a_info,
-	},{
+	}, {
 	    .compatible = "adi,axi-ad9963-dds-1.00.a",
 	    .data = &ad9963_1_00_a_info,
 	}, {
 	    .compatible = "adi,axi-ad9172-1.0",
 	    .data = &ad9162_1_00_a_info,
+	}, {
+	    .compatible = "adi,axi-ad9081-tx-1.0",
+	    .data = &ad9081_1_00_a_info,
 	},
 	{ },
 };
@@ -1528,7 +1758,7 @@ static int cf_axi_dds_probe(struct platform_device *pdev)
 	dev_dbg(&pdev->dev, "Device Tree Probing \'%s\'\n",
 			np->name);
 
-	indio_dev = iio_device_alloc(sizeof(*st));
+	indio_dev = devm_iio_device_alloc(&pdev->dev, sizeof(*st));
 	if (!indio_dev)
 		return -ENOMEM;
 
@@ -1537,34 +1767,40 @@ static int cf_axi_dds_probe(struct platform_device *pdev)
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	st->regs_size = resource_size(res);
 	st->regs = devm_ioremap(&pdev->dev, res->start, resource_size(res));
-	if (!st->regs) {
-		ret = -ENOMEM;
-		goto err_iio_device_free;
-	}
+	if (!st->regs)
+		return -ENOMEM;
 
 	if (info->standalone) {
 		st->clk = devm_clk_get(&pdev->dev, "sampl_clk");
-		if (IS_ERR(st->clk)) {
-			ret = PTR_ERR(st->clk);
-			goto err_iio_device_free;
-		}
+		if (IS_ERR(st->clk))
+			return PTR_ERR(st->clk);
 
 		ret = clk_prepare_enable(st->clk);
 		if (ret < 0)
-			goto err_iio_device_free;
+			return ret;
 
 		st->dac_clk = clk_get_rate(st->clk);
 
 		st->clk_nb.notifier_call = cf_axi_dds_rate_change;
 		clk_notifier_register(st->clk, &st->clk_nb);
 
-		st->chip_info = info->chip_info;
+		if (info->chip_info) {
+			st->chip_info = info->chip_info;
+		} else {
+			ret = cf_axi_dds_setup_chip_info_tbl(st, info->name,
+					info->complex_modified);
+			if (ret) {
+				dev_err(&pdev->dev,
+					"Invalid number of converters identified");
+				return ret;
+			}
+
+			st->chip_info = &st->chip_info_generated;
+		}
 	} else {
 		st->dev_spi = dds_converter_find(&pdev->dev);
-		if (IS_ERR(st->dev_spi)) {
-			ret = PTR_ERR(st->dev_spi);
-			goto err_iio_device_free;
-		}
+		if (IS_ERR(st->dev_spi))
+			return PTR_ERR(st->dev_spi);
 
 		conv = to_converter(st->dev_spi);
 		if (IS_ERR(conv)) {
@@ -1584,7 +1820,7 @@ static int cf_axi_dds_probe(struct platform_device *pdev)
 
 	st->standalone = info->standalone;
 	st->version = dds_read(st, ADI_AXI_REG_VERSION);
-	st->dp_disable = dds_read(st, ADI_REG_DAC_DP_DISABLE);
+	st->dp_disable = false; /* FIXME: resolve later which reg & bit to read for this */
 
 	if (ADI_AXI_PCORE_VER_MAJOR(st->version) >
 		ADI_AXI_PCORE_VER_MAJOR(info->version)) {
@@ -1663,7 +1899,8 @@ static int cf_axi_dds_probe(struct platform_device *pdev)
 	cf_axi_dds_datasel(st, -1, DATA_SEL_DDS);
 
 	if (!st->dp_disable) {
-		unsigned scale, frequency;
+		u32 scale, frequency, phase, i;
+
 		scale = 0x1000; /* 0.250 */
 		frequency = 40000000;
 
@@ -1671,37 +1908,33 @@ static int cf_axi_dds_probe(struct platform_device *pdev)
 		of_property_read_u32(np, "adi,axi-dds-default-frequency",
 				     &frequency);
 
-		cf_axi_dds_default_setup(st, 0, 90000, frequency, scale);
-		cf_axi_dds_default_setup(st, 1, 90000, frequency, scale);
+		for (i = 0; i < st->chip_info->num_dds_channels; i += 2) {
+			if ((i / 2) % 2)
+				phase = 0;
+			else
+				phase = 90000;
 
-
-		if (st->chip_info->num_dds_channels >= 4) {
-			cf_axi_dds_default_setup(st, 2, 0, frequency, scale);
-			cf_axi_dds_default_setup(st, 3, 0, frequency, scale);
+			cf_axi_dds_default_setup(st, i, phase,
+						 frequency, scale);
+			cf_axi_dds_default_setup(st, i + 1, phase,
+						 frequency, scale);
 		}
 
-		if (st->chip_info->num_dds_channels >= 8) {
-			cf_axi_dds_default_setup(st, 4, 90000, frequency, scale);
-			cf_axi_dds_default_setup(st, 5, 90000, frequency, scale);
-			cf_axi_dds_default_setup(st, 6, 0, frequency, scale);
-			cf_axi_dds_default_setup(st, 7, 0, frequency, scale);
-		}
-
-		if (st->chip_info->num_dds_channels >= 16) {
-			cf_axi_dds_default_setup(st, 8, 90000, frequency, scale);
-			cf_axi_dds_default_setup(st, 9, 90000, frequency, scale);
-			cf_axi_dds_default_setup(st, 10, 0, frequency, scale);
-			cf_axi_dds_default_setup(st, 11, 0, frequency, scale);
-			cf_axi_dds_default_setup(st, 12, 90000, frequency, scale);
-			cf_axi_dds_default_setup(st, 13, 90000, frequency, scale);
-			cf_axi_dds_default_setup(st, 14, 0, frequency, scale);
-			cf_axi_dds_default_setup(st, 15, 0, frequency, scale);
-		}
+		for (i = 0; i < st->chip_info->num_buf_channels; i++)
+			if (i % 2)
+				dds_write(st, ADI_REG_CHAN_CNTRL_8(i),
+					ADI_IQCOR_COEFF_2(0x4000) |
+					ADI_IQCOR_COEFF_1(0));
+			else
+				dds_write(st, ADI_REG_CHAN_CNTRL_8(i),
+					ADI_IQCOR_COEFF_2(0) |
+					ADI_IQCOR_COEFF_1(0x4000));
 
 		cf_axi_dds_update_chan_spec(st, st->chip_info->channel,
 				st->chip_info->num_channels);
 
-		if (of_property_read_bool(np, "adi,axi-interpolation-core-available")) {
+		if (of_property_read_bool(np,
+			"adi,axi-interpolation-core-available")) {
 			st->interpolation_factor = 1;
 			WARN_ON(st->iio_info.attrs != NULL);
 			st->iio_info.attrs = &cf_axi_int_attribute_group;
@@ -1712,7 +1945,6 @@ static int cf_axi_dds_probe(struct platform_device *pdev)
 			if (IS_ERR(st->interpolation_gpio))
 				dev_err(&pdev->dev, "interpolation gpio error\n");
 		}
-
 	}
 
 	st->enable = true;
@@ -1723,13 +1955,15 @@ static int cf_axi_dds_probe(struct platform_device *pdev)
 
 		if (st->chip_info->num_shadow_slave_channels) {
 			u32 regs[2];
+
 			ret = of_property_read_u32_array(pdev->dev.of_node,
-					"slavecore-reg", regs, ARRAY_SIZE(regs));
+					"slavecore-reg", regs,
+					ARRAY_SIZE(regs));
 			if (!ret) {
 				st->slave_regs = ioremap(regs[0], regs[1]);
 				if (st->slave_regs)
-					st->have_slave_channels = st->chip_info->
-						num_shadow_slave_channels;
+					st->have_slave_channels =
+						st->chip_info->num_shadow_slave_channels;
 
 			}
 		}
@@ -1742,16 +1976,17 @@ static int cf_axi_dds_probe(struct platform_device *pdev)
 			if (ret)
 				goto err_converter_put;
 
-			indio_dev->available_scan_masks = st->chip_info->scan_masks;
+			indio_dev->available_scan_masks =
+				st->chip_info->scan_masks;
 		}
 
 	} else if (dds_read(st, ADI_AXI_REG_ID)) {
 		u32 regs[2];
+
 		ret = of_property_read_u32_array(pdev->dev.of_node,
 				"mastercore-reg", regs, ARRAY_SIZE(regs));
-		if (!ret) {
+		if (!ret)
 			st->master_regs = ioremap(regs[0], regs[1]);
-		}
 	}
 
 	ret = iio_device_register(indio_dev);
@@ -1785,8 +2020,6 @@ err_converter_put:
 		clk_notifier_unregister(st->clk, &st->clk_nb);
 		clk_disable_unprepare(st->clk);
 	}
-err_iio_device_free:
-	iio_device_free(indio_dev);
 
 	return ret;
 }
@@ -1808,7 +2041,6 @@ static int cf_axi_dds_remove(struct platform_device *pdev)
 		clk_notifier_unregister(st->clk, &st->clk_nb);
 		clk_disable_unprepare(st->clk);
 	}
-	iio_device_free(indio_dev);
 
 	return 0;
 }
