@@ -254,6 +254,56 @@
 				};
 			};
 
+			/* uncomment the following section to enable ad40xx functionality */
+
+			/*axi_spi_engine_0: axi-spi-engine@20000 {
+				compatible = "adi,axi-spi-engine-1.00.a";
+				reg = <0x00020000 0x00010000>;
+				interrupt-parent = <&intc>;
+				interrupts = <0 43 4>;
+				clocks = <&spi_engine_clk>, <&spi_engine_clk>;
+				clock-names = "s_axi_aclk", "spi_clk";
+				num-cs = <1>;
+
+				#address-cells = <0x1>;
+				#size-cells = <0x0>;
+
+				ad4020: adc@0 {
+					compatible = "adi,ad4020";
+					reg = <0>;
+					spi-max-frequency = <83333333>;
+
+					dmas = <&rx_dma 0>;
+					dma-names = "rx";
+
+					vref-supply = <&vref>;
+					#io-channel-cells = <1>;
+				};
+			};
+
+			rx_dma: rx-dmac@0 {
+				compatible = "adi,axi-dmac-1.00.a";
+				reg = <0x00000000 0x00004000>;
+				interrupt-parent = <&intc>;
+				interrupts = <0 42 4>;
+				#dma-cells = <1>;
+				clocks = <&dma_clk>;
+
+				adi,channels {
+					#size-cells = <0>;
+					#address-cells = <1>;
+
+					dma-channel@0 {
+						reg = <0>;
+						adi,source-bus-width = <32>;
+						adi,source-bus-type = <1>;
+						adi,destination-bus-width = <64>;
+						adi,destination-bus-type = <0>;
+					};
+				};
+			};*/
+
+
 			/* add addiional FPGA peripheral device tree entries here */
 
 		};
