@@ -218,16 +218,16 @@
 			#size-cells = <1>;
 			ranges = <0x00000000 0x00000000 0xc0000000 0x00010000>,
 				<0x00000001 0x00000000 0xff200000 0x00000040>,
-				<0x00000001 0x00020000 0xff220000 0x00000800>,
-				<0x00000001 0x00030000 0xff230000 0x00010000>,
+				<0x00000001 0x00090000 0xff290000 0x00000800>,
+				<0x00000001 0x000a0000 0xff2a0000 0x00010000>,
 				<0x00000001 0x00040000 0xff240000 0x00010000>,
 				<0x00000001 0x00050000 0xff250000 0x00000800>;
 
 			/* adi axi_dma device tree entry. for additional information see /linux/Documentation/devicetree/bindings/dma/adi,axi-dmac.txt */
 
-			hdmi_dma: hdmi-dma@100020000 {
+			hdmi_dma: hdmi-dma@100090000 {
 				compatible = "adi,axi-dmac-1.00.a";
-				reg = <0x00000001 0x00020000 0x0800>;
+				reg = <0x00000001 0x00090000 0x0800>;
 				#dma-cells = <1>;
 				interrupt-parent = <&intc>;
 				interrupts = <0 44 4>;
@@ -249,7 +249,7 @@
 			};
 
 
-			axi_hdmi: axi-hdmi@100030000 {
+			axi_hdmi: axi-hdmi@1000a0000 {
 				compatible = "adi,axi-hdmi-tx-1.00.a";
 				reg = <0x00000001 0x000a0000 0x10000>;
 				dmas = <&hdmi_dma 0>;
@@ -266,7 +266,7 @@
 
 			/* uncomment the following section to enable ad40xx functionality */
 
-			/*axi_spi_engine_0: axi-spi-engine@20000 {
+			/*axi_spi_engine_0: axi-spi-engine@40000 {
 				compatible = "adi,axi-spi-engine-1.00.a";
 				reg = <0x00000001 0x00040000 0x00010000>;
 				interrupt-parent = <&intc>;
