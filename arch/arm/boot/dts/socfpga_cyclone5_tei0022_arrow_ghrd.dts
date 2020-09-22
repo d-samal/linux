@@ -1,5 +1,6 @@
 
 #include "socfpga_cyclone5.dtsi"
+#include "dt-bindings/interrupt-controller/irq.h"
 
 / {
 	model = "Trenz tei0022";
@@ -218,10 +219,77 @@
 			#size-cells = <1>;
 			ranges = <0x00000000 0x00000000 0xc0000000 0x00010000>,
 				<0x00000001 0x00000000 0xff200000 0x00000040>,
-				<0x00000001 0x00090000 0xff290000 0x00000800>,
-				<0x00000001 0x000a0000 0xff2a0000 0x00010000>,
+				<0x00000001 0x00010000 0xff210000 0x00000008>,
+				<0x00000001 0x00010010 0xff210010 0x00000008>,
+				<0x00000001 0x00010020 0xff210020 0x00000010>,
+				<0x00000001 0x00010030 0xff210030 0x00000010>,
+				<0x00000001 0x00010040 0xff210040 0x00000010>,
 				<0x00000001 0x00040000 0xff240000 0x00010000>,
-				<0x00000001 0x00050000 0xff250000 0x00000800>;
+				<0x00000001 0x00050000 0xff250000 0x00000800>,
+				<0x00000001 0x00090000 0xff290000 0x00000800>,
+				<0x00000001 0x000a0000 0xff2a0000 0x00010000>;
+
+			/* jtag uart device tree entry. for additional information see /linux/Documentation/devicetree/bindings/serial/altera_jtaguart.txt */
+
+			jtag_uart: jtag-uart@100010000 {
+				compatible = "altr,juart-1.0";
+				reg = <0x00000001 0x00010000 0x08>;
+				interrupts = <0 40 4>;
+			};
+
+			sys_id: sys-id@100010010 {
+				compatible = "altr,sysid-1.0";
+				reg = <0x00000001 0x00010020 0x08>;
+			};
+
+			/* pio device tree entry. for additional information see /linux/Documentation/devicetree/bindings/gpio/gpio-altera.txt */
+
+			button_pio: button-pio@100010020 {
+				compatible = "altr,pio-1.0";
+				reg = <0x00000001 0x00010020 0x10>;
+				interrupts = <0 41 4>;
+				altr,ngpio = <1>;
+				#gpio-cells = <2>;
+				gpio-controller;
+				interrupt-cells = <1>;
+				interrupt-controller;
+				altr,interrupt-type = <IRQ_TYPE_EDGE_FALLING>;
+			};
+
+			dipsw_pio: button-pio@100010030 {
+				compatible = "altr,pio-1.0";
+				reg = <0x00000001 0x00010030 0x10>;
+				interrupts = <0 42 4>;
+				altr,ngpio = <2>;
+				#gpio-cells = <2>;
+				gpio-controller;
+				interrupt-cells = <1>;
+				interrupt-controller;
+				altr,interrupt-type = <IRQ_TYPE_EDGE_BOTH>;
+			};
+
+			led_pio: led-pio@100010040 {
+				compatible = "altr,pio-1.0";
+				reg = <0x00000001 0x00010040 0x10>;
+				altr,ngpio = <2>;
+				#gpio-cells = <2>;
+				gpio-controller;
+			};
+
+			leds {
+				compatible = "gpio-leds";
+
+				fpga0 {
+					label = "fpga_led0";
+					gpios = <&led_pio 0 1>;
+				};
+
+				fpga1 {
+					label = "fpga_led1";
+					gpios = <&led_pio 1 1>;
+				};
+			};
+
 
 			/* adi axi_dma device tree entry. for additional information see /linux/Documentation/devicetree/bindings/dma/adi,axi-dmac.txt */
 
@@ -263,6 +331,8 @@
 					};
 				};
 			};
+
+			/* adi axi_spi_engine device tree entry. for additional information see /linux/Documentation/devicetree/bindings/spi/adi,axi-spi-engine.txt */
 
 			/* uncomment the following section to enable ad40xx functionality */
 
