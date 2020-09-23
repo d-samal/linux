@@ -276,6 +276,8 @@
 				gpio-controller;
 			};
 
+			/* led device tree entry. for additional information see /linux/Documentation/devicetree/bindings/leds/leds-gpio.txt */
+
 			leds {
 				compatible = "gpio-leds";
 
