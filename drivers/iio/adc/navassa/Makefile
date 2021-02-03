@@ -41,7 +41,7 @@ adrv9002_drv-y += devices/adrv9001/public/src/adi_adrv9001_profileutil.o
 obj-$(CONFIG_ADRV9001) += adrv9002_drv.o
 
 ccflags-y += -I$(srctree)/$(src)/devices/adrv9001/private/include \
-	-I$(srctree)/$(src)/devices/adrv9001/private/include/bitfields/b0 \
+	-I$(srctree)/$(src)/devices/adrv9001/private/include/bitfields/c0 \
 	-I$(srctree)/$(src)/devices/adrv9001/public/include  \
 	-I$(srctree)/$(src)/boards/adrv9001/private/include  \
 	-I$(srctree)/$(src)/boards/adrv9001/public/include/  \
