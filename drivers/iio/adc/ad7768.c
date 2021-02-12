@@ -118,36 +118,48 @@ static struct iio_chan_spec name[] = {	\
 
 DECLARE_AD7768_CHANNELS(ad7768_channels);
 
-static int ad7768_spi_reg_read(struct ad7768_state *st, unsigned int addr)
+static int ad7768_spi_reg_read(struct ad7768_state *st, unsigned int addr,
+			       unsigned int *val)
 {
-	struct spi_transfer t[] = {
-		{
-			.tx_buf = &st->d16,
-			.len = 2,
-			.cs_change = 1,
-		}, {
-			.rx_buf = &st->d16,
-			.len = 2,
-		},
+	unsigned char tx_buf[2];
+	unsigned char rx_buf[2];
+	struct spi_transfer t = {
+		.tx_buf = tx_buf,
+		.rx_buf = rx_buf,
+		.len = 2,
+		.bits_per_word = 16
 	};
 	int ret;
 
-	st->d16 = cpu_to_be16((AD7768_WR_FLAG_MSK(addr) << 8));
+	tx_buf[1] = (BIT(7) | addr);
+	tx_buf[0] = 0x00;
 
-	ret = spi_sync_transfer(st->spi, t, ARRAY_SIZE(t));
+	ret = spi_sync_transfer(st->spi, &t, 1);
 	if (ret < 0)
 		return ret;
 
-	return be16_to_cpu(st->d16);
+	*val = rx_buf[0];
+
+	return ret;
 }
 
 static int ad7768_spi_reg_write(struct ad7768_state *st,
 				unsigned int addr,
 				unsigned int val)
 {
-	st->d16 = cpu_to_be16(((addr & 0x7F) << 8) | val);
+	unsigned char tx_buf[2];
+	unsigned char rx_buf[2];
+	struct spi_transfer t = {
+		.tx_buf = tx_buf,
+		.rx_buf = rx_buf,
+		.len = 2,
+		.bits_per_word = 16
+	};
 
-	return spi_write(st->spi, &st->d16, sizeof(st->d16));
+	tx_buf[1] = addr & 0x7F;
+	tx_buf[0] = val;
+
+	return spi_sync_transfer(st->spi, &t, 1);
 }
 
 static int ad7768_spi_write_mask(struct ad7768_state *st,
@@ -155,11 +167,13 @@ static int ad7768_spi_write_mask(struct ad7768_state *st,
 				 unsigned long int mask,
 				 unsigned int val)
 {
-	int regval;
+	unsigned int regval;
+	int ret;
 
-	regval = ad7768_spi_reg_read(st, addr);
-	if (regval < 0)
-		return regval;
+	ret = ad7768_spi_reg_read(st, addr, &regval);
+	ret = ad7768_spi_reg_read(st, addr, &regval);
+	if (ret < 0)
+	    return ret;
 
 	regval &= ~mask;
 	regval |= val;
@@ -177,11 +191,10 @@ static int ad7768_reg_access(struct iio_dev *indio_dev,
 
 	mutex_lock(&st->lock);
 	if (readval) {
-		ret = ad7768_spi_reg_read(st, reg);
+		ret = ad7768_spi_reg_read(st, reg, readval);
 		if (ret < 0)
 			goto exit;
 
-		*readval = ret;
 		ret = 0;
 	} else {
 		ret = ad7768_spi_reg_write(st, reg, writeval);
