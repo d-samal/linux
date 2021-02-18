@@ -197,4 +197,3 @@ static inline void iio_buffer_put(struct iio_buffer *buffer) {}
 
 #endif /* CONFIG_IIO_BUFFER */
 #endif /* _IIO_BUFFER_GENERIC_IMPL_H_ */
-
