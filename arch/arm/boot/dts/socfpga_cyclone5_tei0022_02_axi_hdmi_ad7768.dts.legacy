@@ -217,8 +217,6 @@
 			ranges = <0x00000001 0x00010000 0xff210000 0x00000008>,
 				<0x00000001 0x00020060 0xff220060 0x00000080>,
 				<0x00000001 0x00030000 0xff230000 0x00000800>,
-				<0x00000001 0x00038000 0xff238000 0x00000800>,
-				<0x00000001 0x00040000 0xff240000 0x00010000>,
 				<0x00000001 0x00090000 0xff290000 0x00000800>,
 				<0x00000001 0x000a0000 0xff2a0000 0x00010000>;
 
@@ -282,21 +280,23 @@
 				num-chipselect = <0x1>;
 				status = "okay";
 
-				ad7768: adc@0 {
+				adc@0 {
 					compatible = "adi,ad7768";
 					reg = <0x0>;
 					spi-max-frequency = <0xf4240>;
+					dmas = <&ad7768_dma 0>;
+					dma-names = "rx";
 					vref-supply = <&vref>;
 					clocks = <&ad7768_mclk>;
 					clock-names = "mclk";
 				};
 			};
 
-			ad7768_dma: ad7768-dma@10038000 {
+			ad7768_dma: ad7768-dma@10030000 {
 				compatible = "adi,axi-dmac-1.00.a";
-				reg = <0x00000001 0x00038000 0x00000800>;
+				reg = <0x00000001 0x00030000 0x00000800>;
 				interrupt-parent = <&intc>;
-				interrupts = <0 47 4>;
+				interrupts = <0 46 4>;
 				#dma-cells = <1>;
 				clocks = <&dma_clk>;
 
@@ -306,20 +306,12 @@
 
 					dma-channel@0 {
 						reg = <0>;
-						adi,source-bus-width = <256>;
+						adi,source-bus-width = <32>;
 						adi,source-bus-type = <2>;
 						adi,destination-bus-width = <64>;
 						adi,destination-bus-type = <0>;
 					};
 				};
-			};
-
-			axi_ad7768_adc: axi-ad7768-adc@10040000 {
-				compatible = "adi,axi-adc-10.0.a";
-				reg = <0x00000001 0x00040000 0x00010000>;
-				dmas = <&ad7768_dma 0>;
-				dma-names = "rx";
-				spibus-connected = <&ad7768>;
 			};
 
 
