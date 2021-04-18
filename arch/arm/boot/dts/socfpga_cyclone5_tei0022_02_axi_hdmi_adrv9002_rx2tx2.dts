@@ -1,0 +1,411 @@
+
+#include "socfpga_cyclone5.dtsi"
+#include "dt-bindings/interrupt-controller/irq.h"
+#include <dt-bindings/gpio/gpio.h>
+
+/ {
+	model = "Trenz tei0022";
+	compatible = "altr,socfpga-cyclone5", "altr,socfpga";
+
+	chosen {
+		bootargs = "earlyprintk";
+		stdout-path = "serial0:115200n8";
+	};
+
+	memory {
+		name = "memory";
+		device_type = "memory";
+		reg = <0x0 0x80000000>;
+	};
+
+	aliases {
+		ethernet0 = &gmac1;
+	};
+
+
+	dma_clk: dma_clk {
+		#clock-cells = <0x0>;
+		compatible = "fixed-clock";
+		clock-frequency = <100000000>;
+		clock-output-names = "dma_clock";
+	};
+
+	sys_clk: sys_clk {
+		#clock-cells = <0x0>;
+		compatible = "fixed-clock";
+		clock-frequency = <80000000>;
+		clock-output-names = "sys_clock";
+	};
+
+	hdmi_pll: hdmi_pll {
+		compatible = "altr,altera_iopll-18.1";
+		#clock-cells = <1>;
+			hdmi_pll_outclk0: hdmi_pll_outclk0 {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <148500000>;
+			clock-output-names = "hdmi_pll-outclk0";
+		}; 
+	};
+
+	/* add additional system clock device tree entries here */
+
+        vdd: regulator-vdd {
+                compatible = "regulator-fixed";
+                regulator-name = "fixed-supply";
+                regulator-min-microvolt = <1800000>;
+                regulator-max-microvolt = <1800000>;
+                regulator-always-on;
+        };
+
+        vdd_3_3: regulator-vdd {
+                compatible = "regulator-fixed";
+                regulator-name = "fixed-supply";
+                regulator-min-microvolt = <3300000>;
+                regulator-max-microvolt = <3300000>;
+                regulator-always-on;
+        };
+
+        vref: regulator-vref {
+                compatible = "regulator-fixed";
+                regulator-name = "fixed-supply";
+                regulator-min-microvolt = <2500000>;
+                regulator-max-microvolt = <2500000>;
+                regulator-always-on;
+        };
+
+
+	soc {
+		clkmgr@ffd04000 {
+			clocks {
+				osc1 {
+					clock-frequency = <25000000>;
+				};
+			};
+		};
+
+		gmac1: ethernet@ff702000 {
+
+			#address-cells = <1>;
+        		#size-cells = <0>;
+
+			status = "okay";
+			phy-mode = "rgmii-id";
+
+       			ethernet-phy@1 {
+				reg = <1>;
+				adi,rx-internal-delay-ps = <2000>;
+				adi,tx-internal-delay-ps = <2000>;
+        		};
+
+		};
+
+		timer0: timer0@ffc08000 {
+			clock-frequency = <100000000>;
+		};
+
+		timer1: timer1@ffc09000 {
+			clock-frequency = <100000000>;
+		};
+
+		timer2: timer2@ffd00000 {
+			clock-frequency = <25000000>;
+		};
+
+		timer3: timer3@ffd01000 {
+			clock-frequency = <25000000>;
+		};
+
+		uart0: serial0@ffc02000 {
+			clock-frequency = <100000000>;
+		};
+
+		uart1: serial1@ffc03000 {
+			clock-frequency = <100000000>;
+		};
+
+		mmc: dwmmc0@ff704000 {
+			status = "okay";
+			supports-highspeed;
+			altr,dw-mshc-ciu-div = <0x3>;
+			altr,dw-mshc-sdr-timing = <0x0 0x3>;
+			slot@0 {
+				reg = <0x0>;
+				bus-width = <0x4>;
+			};
+		};
+
+		usb1: usb@ffb40000 {
+			status = "okay";
+			enable-dynamic-fifo = <1>;
+			host-rx-fifo-size = <0xa00>;
+			host-perio-tx-fifo-size = <0xa00>;
+			host-nperio-tx-fifo-size = <0xa00>;
+			dma-desc-enable = <0>;
+			dr_mode = "host";
+		};
+
+		i2c0: i2c@ffc04000 {
+			status = "okay";
+			speed-mode = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+		};
+
+		i2c1: i2c@ffc05000 {
+			status = "okay";
+			speed-mode = <0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			/* adv7511 device tree entry. for additional information see /linux/Documentation/devicetree/bindings/display/bridge/adi,adv7511.txt */
+
+			adv7511: adv7511@39 {
+				compatible = "adi,adv7511";
+				reg = <0x39>, <0x3f>;
+				reg-names = "primary", "edid";
+
+				adi,input-depth = <8>;
+				adi,input-colorspace = "yuv422";
+				adi,input-clock = "1x";
+				adi,input-style = <1>;
+				adi,input-justification = "right";
+				adi,clock-delay = <(0)>;
+
+				avdd-supply = <&vdd>;
+				dvdd-supply = <&vdd>;
+				pvdd-supply = <&vdd>;
+				dvdd-3v-supply = <&vdd_3_3>;
+				bgvdd-supply = <&vdd>;
+
+				status = "okay";
+
+				ports {
+					#address-cells = <1>;
+					#size-cells = <0>;
+
+					port@0 {
+						reg = <0>;
+						adv7511_in: endpoint {
+							remote-endpoint = <&axi_hdmi_out>;
+						};
+					}; 
+
+					port@1 {
+						reg = <1>;
+						
+					};
+
+				}; 
+			};
+		};
+
+
+		/* add additional hps peripheral device tree entries here */
+
+
+		sys_hps_bridges: bridge@ff200000 {
+			compatible = "simple-bus";
+			reg = <0xff200000 0x00200000>;
+			reg-names = "axi_h2f_lw";
+			#address-cells = <2>;
+			#size-cells = <1>;
+			ranges = <0x00000001 0x00010000 0xff210000 0x00000008>,
+				<0x00000001 0x00020010 0xff220010 0x00000010>,
+				<0x00000001 0x00020020 0xff220020 0x00000010>,
+				<0x00000001 0x00020060 0xff220060 0x00000080>,
+				<0x00000001 0x00030000 0xff230000 0x00006000>,
+				<0x00000001 0x0003A000 0xff23A000 0x00002000>,
+				<0x00000001 0x00040000 0xff240000 0x00000800>,
+				<0x00000001 0x00040800 0xff240800 0x00000800>,
+				<0x00000001 0x00041000 0xff241000 0x00000010>,
+				<0x00000001 0x00090000 0xff290000 0x00000800>,
+				<0x00000001 0x000a0000 0xff2a0000 0x00010000>;
+
+			sys_id: sys-id@100010000 {
+				compatible = "altr,sysid-1.0";
+				reg = <0x00000001 0x00010000 0x08>;
+			};
+
+
+			/* adi axi_dma device tree entry. for additional information see /linux/Documentation/devicetree/bindings/dma/adi,axi-dmac.txt */
+
+			hdmi_dma: hdmi-dma@100090000 {
+				compatible = "adi,axi-dmac-1.00.a";
+				reg = <0x00000001 0x00090000 0x0800>;
+				#dma-cells = <1>;
+				interrupt-parent = <&intc>;
+				interrupts = <0 44 4>;
+				clocks = <&dma_clk 0>;
+				status = "okay";
+
+				adi,channels {
+					#size-cells = <0>;
+					#address-cells = <1>;
+
+					dma-channel@0 {
+						reg = <0>;
+						adi,source-bus-width = <64>;
+						adi,source-bus-type = <0>;
+						adi,destination-bus-width = <64>;
+						adi,destination-bus-type = <1>;
+					};
+				};
+			};
+
+
+			axi_hdmi: axi-hdmi@1000a0000 {
+				compatible = "adi,axi-hdmi-tx-1.00.a";
+				reg = <0x00000001 0x000a0000 0x10000>;
+				dmas = <&hdmi_dma 0>;
+				dma-names = "video";
+				clocks = <&hdmi_pll 0>;
+				status = "okay";
+
+				port {
+					axi_hdmi_out: endpoint {
+						remote-endpoint = <&adv7511_in>;
+					};
+				};
+			};
+
+
+			sys_spi: spi@0x100020060 {
+				compatible = "altr,spi-1.0";
+				reg = <0x00000001 0x00020060 0x20>;
+				interrupt-parent = <&intc>;
+				interrupts = <0 45 4>;
+				clocks = <&dma_clk>;
+				#address-cells = <0x1>;
+				#size-cells = <0x0>;
+				bus-num = <0x0>;
+				num-chipselect = <0x1>;
+			}; 
+
+			adrv9001_gpio: gpio_inout@100041000 {
+				compatible = "altr,pio-1.0";
+				reg = <0x00000001 0x00041000 0x00000010>;
+				interrupt-parent = <&intc>;
+				interrupts = <0 46 4>;
+				/*interrupt-controller;
+				#interrupt-cells = <2>;*/
+				altr,gpio-bank-width = <19>;
+				altr,interrupt-type = <4>;
+				altr,interrupt_type = <4>;
+				level_trigger = <1>;
+				resetvalue = <0>;
+				#gpio-cells = <2>;
+				gpio-controller;
+			};
+
+			rx_dma: rx-dma@100040000 {
+				compatible = "adi,axi-dmac-1.00.a";
+				reg = <0x00000001 0x00040000 0x800>;
+				#dma-cells = <1>;
+				interrupt-parent = <&intc>;
+				interrupts = <0 42 4>;
+				clocks = <&dma_clk>;
+
+				adi,channels {
+					#size-cells = <0>;
+					#address-cells = <1>;
+
+					dma-channel@0 {
+						reg = <0>;
+						adi,source-bus-width = <64>;
+						adi,source-bus-type = <2>;
+						adi,destination-bus-width = <64>;
+						adi,destination-bus-type = <0>;
+					};
+				};
+
+			};
+
+			tx_dma: tx-dma@100040800 {
+				compatible = "adi,axi-dmac-1.00.a";
+				reg = <0x00000001 0x00040800 0x800>;
+				#dma-cells = <1>;
+				interrupt-parent = <&intc>;
+				interrupts = <0 43 4>;
+				clocks = <&dma_clk>;
+
+				adi,channels {
+					#size-cells = <0>;
+					#address-cells = <1>;
+
+					dma-channel@0 {
+						reg = <0>;
+						adi,source-bus-width = <64>;
+						adi,source-bus-type = <0>;
+						adi,destination-bus-width = <64>;
+						adi,destination-bus-type = <1>;
+					};
+				};
+			};
+
+			axi_adrv9002_core_rx: axi-adrv9002-rx-lpc@100030000 {
+				compatible = "adi,axi-adrv9002-rx-1.0";
+				reg = <0x00000001 0x00030000 0x6000>;
+				clocks = <&adc0_adrv9002 0>;
+				dmas = <&rx_dma 0>;
+				dma-names = "rx";
+				spibus-connected = <&adc0_adrv9002>;
+			};
+
+			axi_adrv9002_core_tx: axi-adrv9002-tx-lpc@10003A000 {
+				compatible = "adi,axi-adrv9002-rx2tx2-1.0";
+				reg = <0x00000001 0x0003A000 0x2000>;
+				clocks = <&adc0_adrv9002 1>;
+				clock-names = "sampl_clk";
+				dmas = <&tx_dma 0>;
+				dma-names = "tx";
+				adi,axi-dds-default-scale = <0x800>;
+				adi,axi-dds-default-frequency = <2000000>;
+			};
+
+
+			/* add additional FPGA peripheral device tree entries here */
+
+		};
+	};
+
+};
+
+#define fmc_spi sys_spi
+
+#include "adi-adrv9002.dtsi"
+
+&adc0_adrv9002 {
+	interrupt-parent = <&adrv9001_gpio>;
+
+	compatible = "adi,adrv9002-rx2tx2";
+	reset-gpios = <&adrv9001_gpio 14 GPIO_ACTIVE_LOW>;
+	ssi-sync-gpios = <&adrv9001_gpio 20 GPIO_ACTIVE_HIGH>;
+
+	clock-output-names = "rx1_sampl_clk", "tx1_sampl_clk", "tdd1_intf_clk";
+};
+
+&rx0 {
+	orx-gpios = <&adrv9001_gpio 0 GPIO_ACTIVE_HIGH>; 
+};
+
+&rx1 {
+	orx-gpios = <&adrv9001_gpio 1 GPIO_ACTIVE_HIGH>;
+};
+
+
+&i2c0 {
+	status = "okay";
+	clock-frequency = <100000>;
+
+	eeprom@50 {
+		compatible = "atmel,24c32";
+		reg = <0x50>;
+		pagesize = <32>;
+	};
+};
+
+
+
+
+

@@ -1,7 +1,18 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Analog Devices AD-FMCDAQ2-EBZ
+ * https://wiki.analog.com/resources/eval/user-guides/ad-fmcdaq2-ebz
+ *
+ * hdl_project: <daq2/zc706>
+ * board_revision: <>
+ *
+ * Copyright (C) 2014-2019 Analog Devices Inc.
+ */
 /dts-v1/;
 
 #include "zynq-zc706.dtsi"
 #include "zynq-zc706-adv7511.dtsi"
+#include <dt-bindings/jesd204/adxcvr.h>
 
 &i2c_mux {
 	i2c@5 { /* HPC IIC */
@@ -132,11 +143,9 @@
 		#clock-cells = <1>;
 		clock-output-names = "adc_gt_clk", "rx_out_clk";
 
-		adi,sys-clk-select = <0>;
-		adi,out-clk-select = <4>;
+		adi,sys-clk-select = <XCVR_QPLL>;
+		adi,out-clk-select = <XCVR_REFCLK_DIV2>;
 		adi,use-lpm-enable;
-		adi,use-cpll-enable;
-		adi,vco-max-khz = <5000000>;
 	};
 
 	axi_ad9144_adxcvr: axi-adxcvr-tx@44a60000 {
@@ -149,8 +158,8 @@
 		#clock-cells = <1>;
 		clock-output-names = "dac_gt_clk", "tx_out_clk";
 
-		adi,sys-clk-select = <3>;
-		adi,out-clk-select = <4>;
+		adi,sys-clk-select = <XCVR_QPLL>;
+		adi,out-clk-select = <XCVR_REFCLK_DIV2>;
 		adi,use-lpm-enable;
 	};
 };

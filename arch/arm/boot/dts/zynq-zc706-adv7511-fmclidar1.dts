@@ -1,7 +1,18 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Prototyping platform for LiDAR applications
+ * Link: https://wiki.analog.com/resources/eval/user-guides/ad-fmclidar1-ebz
+ *
+ * hdl_project: <ad_fmclidar1_ebz/zc706>
+ * board_revision: <B>
+ *
+ * Copyright 2020 Analog Devices Inc.
+ */
 /dts-v1/;
 
 #include "zynq-zc706.dtsi"
 #include "zynq-zc706-adv7511.dtsi"
+#include <dt-bindings/jesd204/adxcvr.h>
 
 &i2c_mux {
 	i2c@5 { /* HPC IIC */
@@ -99,7 +110,7 @@
 
 		interrupts = <0 55 IRQ_TYPE_LEVEL_HIGH>;
 
-		clocks = <&clkc 16>, <&ad9528 4>, <&axi_ad9094_adxcvr 0>;
+		clocks = <&clkc 16>, <&ad9528 3>, <&axi_ad9094_adxcvr 0>;
 		clock-names = "s_axi_aclk", "device_clk", "lane_clk";
 
 		adi,octets-per-frame = <1>;
@@ -117,14 +128,14 @@
 		compatible = "adi,axi-adxcvr-1.0";
 		reg = <0x44a50000 0x1000>;
 
-		clocks = <&ad9528 2>;
+		clocks = <&ad9528 4>;
 		clock-names = "conv";
 
 		#clock-cells = <1>;
 		clock-output-names = "adc_gt_clk", "rx_out_clk";
 
-		adi,sys-clk-select = <3>;
-		adi,out-clk-select = <3>;
+		adi,sys-clk-select = <XCVR_QPLL>;
+		adi,out-clk-select = <XCVR_REFCLK>;
 		adi,use-lpm-enable;
 	};
 };

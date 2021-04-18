@@ -1,9 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * ADIS16201 Dual-Axis Digital Inclinometer and Accelerometer
  *
  * Copyright 2010 Analog Devices Inc.
- *
- * Licensed under the GPL-2 or later.
  */
 
 #include <linux/device.h>
@@ -71,7 +70,7 @@
 #define  ADIS16201_DIAG_STAT_FLASH_UPT_FAIL_BIT		2
 /* Power supply above 3.625 V */
 #define  ADIS16201_DIAG_STAT_POWER_HIGH_BIT		1
-/* Power supply below 3.15 V */
+/* Power supply below 2.975 V */
 #define  ADIS16201_DIAG_STAT_POWER_LOW_BIT		0
 
 /* System Command Register Definition */
@@ -231,7 +230,7 @@ static const char * const adis16201_status_error_msgs[] = {
 	[ADIS16201_DIAG_STAT_SPI_FAIL_BIT] = "SPI failure",
 	[ADIS16201_DIAG_STAT_FLASH_UPT_FAIL_BIT] = "Flash update failed",
 	[ADIS16201_DIAG_STAT_POWER_HIGH_BIT] = "Power supply above 3.625V",
-	[ADIS16201_DIAG_STAT_POWER_LOW_BIT] = "Power supply below 3.15V",
+	[ADIS16201_DIAG_STAT_POWER_LOW_BIT] = "Power supply below 2.975V",
 };
 
 static const struct adis_timeout adis16201_timeouts = {
@@ -283,34 +282,15 @@ static int adis16201_probe(struct spi_device *spi)
 	if (ret)
 		return ret;
 
-	ret = adis_setup_buffer_and_trigger(st, indio_dev, NULL);
+	ret = devm_adis_setup_buffer_and_trigger(st, indio_dev, NULL);
 	if (ret)
 		return ret;
 
 	ret = adis_initial_startup(st);
 	if (ret)
-		goto error_cleanup_buffer_trigger;
+		return ret;
 
-	ret = iio_device_register(indio_dev);
-	if (ret < 0)
-		goto error_cleanup_buffer_trigger;
-
-	return 0;
-
-error_cleanup_buffer_trigger:
-	adis_cleanup_buffer_and_trigger(st, indio_dev);
-	return ret;
-}
-
-static int adis16201_remove(struct spi_device *spi)
-{
-	struct iio_dev *indio_dev = spi_get_drvdata(spi);
-	struct adis *st = iio_priv(indio_dev);
-
-	iio_device_unregister(indio_dev);
-	adis_cleanup_buffer_and_trigger(st, indio_dev);
-
-	return 0;
+	return devm_iio_device_register(&spi->dev, indio_dev);
 }
 
 static struct spi_driver adis16201_driver = {
@@ -318,7 +298,6 @@ static struct spi_driver adis16201_driver = {
 		.name = "adis16201",
 	},
 	.probe = adis16201_probe,
-	.remove = adis16201_remove,
 };
 module_spi_driver(adis16201_driver);
 

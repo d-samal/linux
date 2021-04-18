@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Altera SPI driver
  *
@@ -7,10 +8,6 @@
  * Copyright (c) 2006 Ben Dooks
  * Copyright (c) 2006 Simtec Electronics
  *	Ben Dooks <ben@simtec.co.uk>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/interrupt.h>
@@ -93,6 +90,7 @@ static void altera_spi_tx_word(struct altera_spi *hw)
 	}
 
 	writel(txd, hw->base + ALTERA_SPI_TXDATA);
+
 }
 
 static void altera_spi_rx_word(struct altera_spi *hw)
@@ -100,6 +98,7 @@ static void altera_spi_rx_word(struct altera_spi *hw)
 	unsigned int rxd;
 
 	rxd = readl(hw->base + ALTERA_SPI_RXDATA);
+
 	if (hw->rx) {
 		switch (hw->bytes_per_word) {
 		case 1:
@@ -173,7 +172,6 @@ static int altera_spi_probe(struct platform_device *pdev)
 {
 	struct altera_spi *hw;
 	struct spi_master *master;
-	struct resource *res;
 	int err = -ENODEV;
 
 	master = spi_alloc_master(&pdev->dev, sizeof(struct altera_spi));
@@ -192,12 +190,12 @@ static int altera_spi_probe(struct platform_device *pdev)
 	hw = spi_master_get_devdata(master);
 
 	/* find and map our resources */
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	hw->base = devm_ioremap_resource(&pdev->dev, res);
+	hw->base = devm_platform_ioremap_resource(pdev, 0);
 	if (IS_ERR(hw->base)) {
 		err = PTR_ERR(hw->base);
 		goto exit;
 	}
+
 	/* program defaults into the registers */
 	hw->imr = 0;		/* disable spi interrupts */
 	writel(hw->imr, hw->base + ALTERA_SPI_CONTROL);

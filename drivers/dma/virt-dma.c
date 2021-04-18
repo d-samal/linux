@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * Virtual DMA channel support for DMAengine
  *
  * Copyright (C) 2012 Russell King
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 #include <linux/device.h>
 #include <linux/dmaengine.h>
@@ -107,9 +104,8 @@ static void vchan_complete(unsigned long arg)
 		dmaengine_desc_get_callback(&vd->tx, &cb);
 
 		list_del(&vd->node);
-		vchan_vdesc_fini(vd);
-
 		dmaengine_desc_callback_invoke(&cb, &vd->tx_result);
+		vchan_vdesc_fini(vd);
 	}
 }
 

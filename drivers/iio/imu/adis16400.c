@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * adis16400.c	support Analog Devices ADIS16400/5
  *		3d 2g Linear Accelerometers,
@@ -7,11 +8,6 @@
  * Copyright (c) 2009 Manuel Stahl <manuel.stahl@iis.fraunhofer.de>
  * Copyright (c) 2007 Jonathan Cameron <jic23@kernel.org>
  * Copyright (c) 2011 Analog Devices Inc.
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
- *
  */
 
 #include <linux/interrupt.h>
@@ -160,7 +156,7 @@ struct adis16400_state;
 
 struct adis16400_chip_info {
 	const struct iio_chan_spec *channels;
-	const struct adis_timeout *timeouts;
+	const struct adis_data adis_data;
 	const int num_channels;
 	const long flags;
 	unsigned int gyro_scale_micro;
@@ -262,7 +258,7 @@ static int adis16400_show_product_id(void *arg, u64 *val)
 
 	return 0;
 }
-DEFINE_SIMPLE_ATTRIBUTE(adis16400_product_id_fops,
+DEFINE_DEBUGFS_ATTRIBUTE(adis16400_product_id_fops,
 	adis16400_show_product_id, NULL, "%lld\n");
 
 static int adis16400_show_flash_count(void *arg, u64 *val)
@@ -279,23 +275,22 @@ static int adis16400_show_flash_count(void *arg, u64 *val)
 
 	return 0;
 }
-DEFINE_SIMPLE_ATTRIBUTE(adis16400_flash_count_fops,
+DEFINE_DEBUGFS_ATTRIBUTE(adis16400_flash_count_fops,
 	adis16400_show_flash_count, NULL, "%lld\n");
 
 static int adis16400_debugfs_init(struct iio_dev *indio_dev)
 {
 	struct adis16400_state *st = iio_priv(indio_dev);
+	struct dentry *d = iio_get_debugfs_dentry(indio_dev);
 
 	if (st->variant->flags & ADIS16400_HAS_SERIAL_NUMBER)
-		debugfs_create_file("serial_number", 0400,
-			indio_dev->debugfs_dentry, st,
-			&adis16400_serial_number_fops);
+		debugfs_create_file_unsafe("serial_number", 0400,
+				d, st, &adis16400_serial_number_fops);
 	if (st->variant->flags & ADIS16400_HAS_PROD_ID)
-		debugfs_create_file("product_id", 0400,
-			indio_dev->debugfs_dentry, st,
-			&adis16400_product_id_fops);
-	debugfs_create_file("flash_count", 0400, indio_dev->debugfs_dentry,
-		st, &adis16400_flash_count_fops);
+		debugfs_create_file_unsafe("product_id", 0400,
+				d, st, &adis16400_product_id_fops);
+	debugfs_create_file_unsafe("flash_count", 0400,
+			d, st, &adis16400_flash_count_fops);
 
 	return 0;
 }
@@ -320,11 +315,6 @@ enum adis16400_chip_variant {
 	ADIS16400,
 	ADIS16445,
 	ADIS16448,
-};
-
-static struct adis_burst adis16400_burst = {
-	.en = true,
-	.reg_cmd = ADIS16400_GLOB_CMD,
 };
 
 static int adis16334_get_freq(struct adis16400_state *st)
@@ -934,10 +924,64 @@ static const struct iio_chan_spec adis16334_channels[] = {
 	IIO_CHAN_SOFT_TIMESTAMP(ADIS16400_SCAN_TIMESTAMP),
 };
 
+static const char * const adis16400_status_error_msgs[] = {
+	[ADIS16400_DIAG_STAT_ZACCL_FAIL] = "Z-axis accelerometer self-test failure",
+	[ADIS16400_DIAG_STAT_YACCL_FAIL] = "Y-axis accelerometer self-test failure",
+	[ADIS16400_DIAG_STAT_XACCL_FAIL] = "X-axis accelerometer self-test failure",
+	[ADIS16400_DIAG_STAT_XGYRO_FAIL] = "X-axis gyroscope self-test failure",
+	[ADIS16400_DIAG_STAT_YGYRO_FAIL] = "Y-axis gyroscope self-test failure",
+	[ADIS16400_DIAG_STAT_ZGYRO_FAIL] = "Z-axis gyroscope self-test failure",
+	[ADIS16400_DIAG_STAT_ALARM2] = "Alarm 2 active",
+	[ADIS16400_DIAG_STAT_ALARM1] = "Alarm 1 active",
+	[ADIS16400_DIAG_STAT_FLASH_CHK] = "Flash checksum error",
+	[ADIS16400_DIAG_STAT_SELF_TEST] = "Self test error",
+	[ADIS16400_DIAG_STAT_OVERFLOW] = "Sensor overrange",
+	[ADIS16400_DIAG_STAT_SPI_FAIL] = "SPI failure",
+	[ADIS16400_DIAG_STAT_FLASH_UPT] = "Flash update failed",
+	[ADIS16400_DIAG_STAT_POWER_HIGH] = "Power supply above 5.25V",
+	[ADIS16400_DIAG_STAT_POWER_LOW] = "Power supply below 4.75V",
+};
+
+#define ADIS16400_DATA(_timeouts, _burst_len)				\
+{									\
+	.msc_ctrl_reg = ADIS16400_MSC_CTRL,				\
+	.glob_cmd_reg = ADIS16400_GLOB_CMD,				\
+	.diag_stat_reg = ADIS16400_DIAG_STAT,				\
+	.read_delay = 50,						\
+	.write_delay = 50,						\
+	.self_test_mask = ADIS16400_MSC_CTRL_MEM_TEST,			\
+	.self_test_reg = ADIS16400_MSC_CTRL,				\
+	.status_error_msgs = adis16400_status_error_msgs,		\
+	.status_error_mask = BIT(ADIS16400_DIAG_STAT_ZACCL_FAIL) |	\
+		BIT(ADIS16400_DIAG_STAT_YACCL_FAIL) |			\
+		BIT(ADIS16400_DIAG_STAT_XACCL_FAIL) |			\
+		BIT(ADIS16400_DIAG_STAT_XGYRO_FAIL) |			\
+		BIT(ADIS16400_DIAG_STAT_YGYRO_FAIL) |			\
+		BIT(ADIS16400_DIAG_STAT_ZGYRO_FAIL) |			\
+		BIT(ADIS16400_DIAG_STAT_ALARM2) |			\
+		BIT(ADIS16400_DIAG_STAT_ALARM1) |			\
+		BIT(ADIS16400_DIAG_STAT_FLASH_CHK) |			\
+		BIT(ADIS16400_DIAG_STAT_SELF_TEST) |			\
+		BIT(ADIS16400_DIAG_STAT_OVERFLOW) |			\
+		BIT(ADIS16400_DIAG_STAT_SPI_FAIL) |			\
+		BIT(ADIS16400_DIAG_STAT_FLASH_UPT) |			\
+		BIT(ADIS16400_DIAG_STAT_POWER_HIGH) |			\
+		BIT(ADIS16400_DIAG_STAT_POWER_LOW),			\
+	.timeouts = (_timeouts),					\
+	.burst_reg_cmd = ADIS16400_GLOB_CMD,				\
+	.burst_len = (_burst_len)					\
+}
+
 static const struct adis_timeout adis16300_timeouts = {
 	.reset_ms = ADIS16400_STARTUP_DELAY,
 	.sw_reset_ms = ADIS16400_STARTUP_DELAY,
 	.self_test_ms = ADIS16400_STARTUP_DELAY,
+};
+
+static const struct adis_timeout adis16334_timeouts = {
+	.reset_ms = 60,
+	.sw_reset_ms = 60,
+	.self_test_ms = 14,
 };
 
 static const struct adis_timeout adis16362_timeouts = {
@@ -976,7 +1020,7 @@ static struct adis16400_chip_info adis16400_chips[] = {
 		.temp_offset = 25000000 / 140000, /* 25 C = 0x00 */
 		.set_freq = adis16400_set_freq,
 		.get_freq = adis16400_get_freq,
-		.timeouts = &adis16300_timeouts,
+		.adis_data = ADIS16400_DATA(&adis16300_timeouts, 18),
 	},
 	[ADIS16334] = {
 		.channels = adis16334_channels,
@@ -989,6 +1033,7 @@ static struct adis16400_chip_info adis16400_chips[] = {
 		.temp_offset = 25000000 / 67850, /* 25 C = 0x00 */
 		.set_freq = adis16334_set_freq,
 		.get_freq = adis16334_get_freq,
+		.adis_data = ADIS16400_DATA(&adis16334_timeouts, 0),
 	},
 	[ADIS16350] = {
 		.channels = adis16350_channels,
@@ -1000,7 +1045,7 @@ static struct adis16400_chip_info adis16400_chips[] = {
 		.flags = ADIS16400_NO_BURST | ADIS16400_HAS_SLOW_MODE,
 		.set_freq = adis16400_set_freq,
 		.get_freq = adis16400_get_freq,
-		.timeouts = &adis16300_timeouts,
+		.adis_data = ADIS16400_DATA(&adis16300_timeouts, 0),
 	},
 	[ADIS16360] = {
 		.channels = adis16350_channels,
@@ -1013,7 +1058,7 @@ static struct adis16400_chip_info adis16400_chips[] = {
 		.temp_offset = 25000000 / 136000, /* 25 C = 0x00 */
 		.set_freq = adis16400_set_freq,
 		.get_freq = adis16400_get_freq,
-		.timeouts = &adis16300_timeouts,
+		.adis_data = ADIS16400_DATA(&adis16300_timeouts, 28),
 	},
 	[ADIS16362] = {
 		.channels = adis16350_channels,
@@ -1026,7 +1071,7 @@ static struct adis16400_chip_info adis16400_chips[] = {
 		.temp_offset = 25000000 / 136000, /* 25 C = 0x00 */
 		.set_freq = adis16400_set_freq,
 		.get_freq = adis16400_get_freq,
-		.timeouts = &adis16362_timeouts,
+		.adis_data = ADIS16400_DATA(&adis16362_timeouts, 28),
 	},
 	[ADIS16364] = {
 		.channels = adis16350_channels,
@@ -1039,7 +1084,7 @@ static struct adis16400_chip_info adis16400_chips[] = {
 		.temp_offset = 25000000 / 136000, /* 25 C = 0x00 */
 		.set_freq = adis16400_set_freq,
 		.get_freq = adis16400_get_freq,
-		.timeouts = &adis16362_timeouts,
+		.adis_data = ADIS16400_DATA(&adis16362_timeouts, 28),
 	},
 	[ADIS16367] = {
 		.channels = adis16350_channels,
@@ -1052,7 +1097,7 @@ static struct adis16400_chip_info adis16400_chips[] = {
 		.temp_offset = 25000000 / 136000, /* 25 C = 0x00 */
 		.set_freq = adis16400_set_freq,
 		.get_freq = adis16400_get_freq,
-		.timeouts = &adis16300_timeouts,
+		.adis_data = ADIS16400_DATA(&adis16300_timeouts, 28),
 	},
 	[ADIS16400] = {
 		.channels = adis16400_channels,
@@ -1064,7 +1109,7 @@ static struct adis16400_chip_info adis16400_chips[] = {
 		.temp_offset = 25000000 / 140000, /* 25 C = 0x00 */
 		.set_freq = adis16400_set_freq,
 		.get_freq = adis16400_get_freq,
-		.timeouts = &adis16400_timeouts,
+		.adis_data = ADIS16400_DATA(&adis16400_timeouts, 24),
 	},
 	[ADIS16445] = {
 		.channels = adis16445_channels,
@@ -1078,7 +1123,7 @@ static struct adis16400_chip_info adis16400_chips[] = {
 		.temp_offset = 31000000 / 73860, /* 31 C = 0x00 */
 		.set_freq = adis16334_set_freq,
 		.get_freq = adis16334_get_freq,
-		.timeouts = &adis16445_timeouts,
+		.adis_data = ADIS16400_DATA(&adis16445_timeouts, 16),
 	},
 	[ADIS16448] = {
 		.channels = adis16448_channels,
@@ -1092,7 +1137,7 @@ static struct adis16400_chip_info adis16400_chips[] = {
 		.temp_offset = 31000000 / 73860, /* 31 C = 0x00 */
 		.set_freq = adis16334_set_freq,
 		.get_freq = adis16334_get_freq,
-		.timeouts = &adis16448_timeouts,
+		.adis_data = ADIS16400_DATA(&adis16448_timeouts, 24),
 	}
 };
 
@@ -1101,24 +1146,6 @@ static const struct iio_info adis16400_info = {
 	.write_raw = &adis16400_write_raw,
 	.update_scan_mode = adis_update_scan_mode,
 	.debugfs_reg_access = adis_debugfs_reg_access,
-};
-
-static const char * const adis16400_status_error_msgs[] = {
-	[ADIS16400_DIAG_STAT_ZACCL_FAIL] = "Z-axis accelerometer self-test failure",
-	[ADIS16400_DIAG_STAT_YACCL_FAIL] = "Y-axis accelerometer self-test failure",
-	[ADIS16400_DIAG_STAT_XACCL_FAIL] = "X-axis accelerometer self-test failure",
-	[ADIS16400_DIAG_STAT_XGYRO_FAIL] = "X-axis gyroscope self-test failure",
-	[ADIS16400_DIAG_STAT_YGYRO_FAIL] = "Y-axis gyroscope self-test failure",
-	[ADIS16400_DIAG_STAT_ZGYRO_FAIL] = "Z-axis gyroscope self-test failure",
-	[ADIS16400_DIAG_STAT_ALARM2] = "Alarm 2 active",
-	[ADIS16400_DIAG_STAT_ALARM1] = "Alarm 1 active",
-	[ADIS16400_DIAG_STAT_FLASH_CHK] = "Flash checksum error",
-	[ADIS16400_DIAG_STAT_SELF_TEST] = "Self test error",
-	[ADIS16400_DIAG_STAT_OVERFLOW] = "Sensor overrange",
-	[ADIS16400_DIAG_STAT_SPI_FAIL] = "SPI failure",
-	[ADIS16400_DIAG_STAT_FLASH_UPT] = "Flash update failed",
-	[ADIS16400_DIAG_STAT_POWER_HIGH] = "Power supply above 5.25V",
-	[ADIS16400_DIAG_STAT_POWER_LOW] = "Power supply below 4.75V",
 };
 
 static void adis16400_setup_chan_mask(struct adis16400_state *st)
@@ -1135,41 +1162,9 @@ static void adis16400_setup_chan_mask(struct adis16400_state *st)
 	}
 }
 
-static struct adis_data *adis16400_adis_data_alloc(struct adis16400_state *st,
-						   struct device *dev)
+static void adis16400_stop(void *data)
 {
-	struct adis_data *data;
-
-	data = devm_kzalloc(dev, sizeof(struct adis_data), GFP_KERNEL);
-	if (!data)
-		return ERR_PTR(-ENOMEM);
-
-	data->msc_ctrl_reg = ADIS16400_MSC_CTRL;
-	data->glob_cmd_reg = ADIS16400_GLOB_CMD;
-	data->diag_stat_reg = ADIS16400_DIAG_STAT;
-	data->read_delay = 50;
-	data->write_delay = 50;
-	data->self_test_mask = ADIS16400_MSC_CTRL_MEM_TEST;
-	data->self_test_reg = ADIS16400_MSC_CTRL;
-	data->status_error_msgs = adis16400_status_error_msgs;
-	data->status_error_mask = BIT(ADIS16400_DIAG_STAT_ZACCL_FAIL) |
-				BIT(ADIS16400_DIAG_STAT_YACCL_FAIL) |
-				BIT(ADIS16400_DIAG_STAT_XACCL_FAIL) |
-				BIT(ADIS16400_DIAG_STAT_XGYRO_FAIL) |
-				BIT(ADIS16400_DIAG_STAT_YGYRO_FAIL) |
-				BIT(ADIS16400_DIAG_STAT_ZGYRO_FAIL) |
-				BIT(ADIS16400_DIAG_STAT_ALARM2) |
-				BIT(ADIS16400_DIAG_STAT_ALARM1) |
-				BIT(ADIS16400_DIAG_STAT_FLASH_CHK) |
-				BIT(ADIS16400_DIAG_STAT_SELF_TEST) |
-				BIT(ADIS16400_DIAG_STAT_OVERFLOW) |
-				BIT(ADIS16400_DIAG_STAT_SPI_FAIL) |
-				BIT(ADIS16400_DIAG_STAT_FLASH_UPT) |
-				BIT(ADIS16400_DIAG_STAT_POWER_HIGH) |
-				BIT(ADIS16400_DIAG_STAT_POWER_LOW);
-	data->timeouts = st->variant->timeouts;
-
-	return data;
+	adis16400_stop_device(data);
 }
 
 static int adis16400_probe(struct spi_device *spi)
@@ -1199,50 +1194,32 @@ static int adis16400_probe(struct spi_device *spi)
 	if (!(st->variant->flags & ADIS16400_NO_BURST)) {
 		adis16400_setup_chan_mask(st);
 		indio_dev->available_scan_masks = st->avail_scan_mask;
-		st->adis.burst = &adis16400_burst;
-		if (st->variant->flags & ADIS16400_BURST_DIAG_STAT)
-			st->adis.burst->extra_len = sizeof(u16);
 	}
 
-	adis16400_data = adis16400_adis_data_alloc(st, &spi->dev);
-	if (IS_ERR(adis16400_data))
-		return PTR_ERR(adis16400_data);
+	adis16400_data = &st->variant->adis_data;
 
 	ret = adis_init(&st->adis, indio_dev, spi, adis16400_data);
 	if (ret)
 		return ret;
 
-	ret = adis_setup_buffer_and_trigger(&st->adis, indio_dev,
-			adis16400_trigger_handler);
+	ret = devm_adis_setup_buffer_and_trigger(&st->adis, indio_dev, adis16400_trigger_handler);
 	if (ret)
 		return ret;
 
 	/* Get the device into a sane initial state */
 	ret = adis16400_initial_setup(indio_dev);
 	if (ret)
-		goto error_cleanup_buffer;
-	ret = iio_device_register(indio_dev);
+		return ret;
+
+	ret = devm_add_action_or_reset(&spi->dev, adis16400_stop, indio_dev);
 	if (ret)
-		goto error_cleanup_buffer;
+		return ret;
+
+	ret = devm_iio_device_register(&spi->dev, indio_dev);
+	if (ret)
+		return ret;
 
 	adis16400_debugfs_init(indio_dev);
-	return 0;
-
-error_cleanup_buffer:
-	adis_cleanup_buffer_and_trigger(&st->adis, indio_dev);
-	return ret;
-}
-
-static int adis16400_remove(struct spi_device *spi)
-{
-	struct iio_dev *indio_dev = spi_get_drvdata(spi);
-	struct adis16400_state *st = iio_priv(indio_dev);
-
-	iio_device_unregister(indio_dev);
-	adis16400_stop_device(indio_dev);
-
-	adis_cleanup_buffer_and_trigger(&st->adis, indio_dev);
-
 	return 0;
 }
 
@@ -1272,7 +1249,6 @@ static struct spi_driver adis16400_driver = {
 	},
 	.id_table = adis16400_id,
 	.probe = adis16400_probe,
-	.remove = adis16400_remove,
 };
 module_spi_driver(adis16400_driver);
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 #
 # Industrial I/O generic buffer implementations
 #
@@ -52,8 +53,3 @@ config IIO_TRIGGERED_BUFFER
 	select IIO_KFIFO_BUF
 	help
 	  Provides helper functions for setting up triggered buffers.
-
-config IIO_HW_CONSUMER
-	tristate
-	help
-	  Hardware consumer buffer

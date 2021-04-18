@@ -57,6 +57,10 @@ properties:
       When set the output level of the mux out pin is set to 1.8V.
       (default is 3.3V)
 
+  adi,differential-ref-clock:
+    description: Choose differential reference clock.
+    type: boolean
+
   adi,muxout-select:
     description: |
       Select the mux out signal source. Valid values are:
@@ -76,6 +80,7 @@ properties:
       - enum: [0, 1, 3, 4, 5, 6, 8, 9, 10]
 
   adi,mute-till-lock-en:
+    type: boolean
     description:
       If this property is present, then the supply current to RF8P and RF8N
       output stage will shut down until the ADF4371/ADF4372 achieves lock as

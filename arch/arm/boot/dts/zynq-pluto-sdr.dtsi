@@ -68,6 +68,7 @@
 		compatible = "n25q256a", "n25q512a", "jedec,spi-nor"; /* same as S25FL256 */
 		reg = <0x0>;
 		spi-max-frequency = <50000000>;
+		broken-nor-flash-lock-disable;
 		partition@qspi-fsbl-uboot {
 			label = "qspi-fsbl-uboot";
 			reg = <0x0 0x100000>; /* 1M */
@@ -183,11 +184,6 @@
 			compatible = "mathworks,mwipcore-axi4lite-v1.00";
 			reg = <0x43c00000 0xffff>;
 		};
-
-		axi_sysid_0: axi-sysid-0@45000000 {
-			compatible = "adi,axi-sysid-1.00.a";
-			reg = <0x45000000 0x10000>;
-		};
 	};
 };
 
@@ -229,8 +225,7 @@
 		adi,full-port-enable;
 		adi,digital-interface-tune-fir-disable;
 
-		/* Temporary workaround - HDL issue? need to investigate further */
-		adi,digital-interface-tune-skip-mode = <0>; /* SKIP TX */
+		adi,digital-interface-tune-skip-mode = <0>; /* TUNE RX & TX */
 		adi,tx-fb-clock-delay = <0>;
 		adi,tx-data-delay = <9>;
 		adi,swap-ports-enable;

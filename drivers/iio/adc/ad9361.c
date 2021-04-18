@@ -1531,9 +1531,9 @@ static int ad9361_get_split_table_gain(struct ad9361_rf_phy *phy, u32 idx_reg,
 
 	rx_gain->tia_index = ad9361_spi_readf(spi, REG_GAIN_TABLE_READ_DATA2, TIA_GAIN);
 
-	rx_gain->lmt_gain = lna_table[ad9361_gt(phy)][rx_gain->lna_index] +
-				mixer_table[ad9361_gt(phy)][rx_gain->mixer_index] +
-				tia_table[rx_gain->tia_index];
+	rx_gain->lmt_gain = lna_table[ad9361_gt(phy) - RXGAIN_TBLS_END][rx_gain->lna_index] +
+			mixer_table[ad9361_gt(phy) - RXGAIN_TBLS_END][rx_gain->mixer_index] +
+			tia_table[rx_gain->tia_index];
 
 	ad9361_spi_write(spi, REG_GAIN_TABLE_ADDRESS, tbl_addr);
 
@@ -2731,11 +2731,15 @@ static int __ad9361_tx_quad_calib(struct ad9361_rf_phy *phy, u32 phase,
 		if (ret < 0)
 			return ret;
 
-		if (res)
+		if (res) {
 			*res = ad9361_spi_read(phy->spi,
 					(phy->pdata->rx1tx1_mode_use_tx_num == 2) ?
 					REG_QUAD_CAL_STATUS_TX2 : REG_QUAD_CAL_STATUS_TX1) &
 					(TX1_LO_CONV | TX1_SSB_CONV);
+			if (phy->pdata->rx2tx2)
+				*res &= ad9361_spi_read(phy->spi, REG_QUAD_CAL_STATUS_TX2) &
+					(TX2_LO_CONV | TX2_SSB_CONV);
+		}
 
 		return 0;
 }
@@ -2893,8 +2897,8 @@ static int ad9361_tx_quad_calib(struct ad9361_rf_phy *phy,
 	ad9361_spi_write(spi, REG_QUAD_CAL_COUNT, 0xFF);
 	ad9361_spi_write(spi, REG_KEXP_1, KEXP_TX(1) | KEXP_TX_COMP(3) |
 			 KEXP_DC_I(3) | KEXP_DC_Q(3));
-	ad9361_spi_write(spi, REG_MAG_FTEST_THRESH, 0x01);
-	ad9361_spi_write(spi, REG_MAG_FTEST_THRESH_2, 0x01);
+	ad9361_spi_write(spi, REG_MAG_FTEST_THRESH, 0x03);
+	ad9361_spi_write(spi, REG_MAG_FTEST_THRESH_2, 0x03);
 
 	if (st->tx_quad_lpf_tia_match < 0) /* set in ad9361_load_gt() */
 		dev_err(dev, "failed to find suitable LPF TIA value in gain table\n");
@@ -4073,6 +4077,7 @@ static int ad9361_set_trx_clock_chain(struct ad9361_rf_phy *phy,
 {
 	struct device *dev = &phy->spi->dev;
 	struct ad9361_rf_phy_state *st = phy->state;
+	struct axiadc_converter *conv = spi_get_drvdata(phy->spi);
 	int ret, i, j, n;
 
 	dev_dbg(&phy->spi->dev, "%s", __func__);
@@ -4142,12 +4147,12 @@ static int ad9361_set_trx_clock_chain(struct ad9361_rf_phy *phy,
 
 	if ((!phy->pdata->dig_interface_tune_fir_disable &&
 		!(st->bypass_tx_fir && st->bypass_rx_fir)) &&
-		!phy->pdata->bb_clk_change_dig_tune_en)
+		!phy->pdata->bb_clk_change_dig_tune_en && conv)
 		ret = ad9361_dig_tune(phy, 0, SKIP_STORE_RESULT);
 	if (ret < 0)
 		return ret;
 
-	if (phy->pdata->bb_clk_change_dig_tune_en)
+	if (phy->pdata->bb_clk_change_dig_tune_en && conv)
 		ret = ad9361_dig_tune(phy, 0, 0);
 	if (ret < 0)
 		return ret;
@@ -7165,7 +7170,7 @@ static IIO_DEVICE_ATTR(calib_mode_available, S_IRUGO,
 			NULL,
 			AD9361_CALIB_MODE_AVAIL);
 
-static IIO_DEVICE_ATTR(rssi_gain_step_error, S_IRUGO,
+static IIO_DEVICE_ATTR(rssi_gain_step_error, S_IRUGO | S_IWUSR,
 			ad9361_phy_show,
 			ad9361_phy_store,
 			AD9361_RSSI_GAIN_STEP_ERROR);
@@ -9345,27 +9350,27 @@ ad9361_gt_bin_read(struct file *filp, struct kobject *kobj,
 	int ret, j, len = 0;
 	char *tab;
 
-	tab = kzalloc(bin_attr->size, GFP_KERNEL);
+	tab = kzalloc(count, GFP_KERNEL);
 	if (tab == NULL)
 		return -ENOMEM;
 
-	len += snprintf(tab + len, bin_attr->size - len,
+	len += snprintf(tab + len, count - len,
 		"<gaintable AD%i type=%s dest=%d start=%lli end=%lli>\n", 9361,
 		phy->gt_info[ad9361_gt(phy)].split_table ? "SPLIT" : "FULL", 3,
 		phy->gt_info[ad9361_gt(phy)].start,
 		phy->gt_info[ad9361_gt(phy)].end);
 
 	for (j = 0; j < phy->gt_info[ad9361_gt(phy)].max_index; j++)
-		len += snprintf(tab + len, bin_attr->size - len,
+		len += snprintf(tab + len, count - len,
 			"%d, 0x%.2X, 0x%.2X, 0x%.2X\n",
 			phy->gt_info[ad9361_gt(phy)].abs_gain_tbl[j],
 			phy->gt_info[ad9361_gt(phy)].tab[j][0],
 			phy->gt_info[ad9361_gt(phy)].tab[j][1],
 			phy->gt_info[ad9361_gt(phy)].tab[j][2]);
 
-	len += snprintf(tab + len, bin_attr->size - len, "</gaintable>\n");
+	len += snprintf(tab + len, count - len, "</gaintable>\n");
 
-	ret = memory_read_from_buffer(buf, count, &off, tab, bin_attr->size);
+	ret = memory_read_from_buffer(buf, count, &off, tab, len);
 
 	kfree(tab);
 

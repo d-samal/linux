@@ -1,3 +1,16 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Analog Devices ADALM2000
+ * https://wiki.analog.com/university/tools/m2k
+ * https://wiki.analog.com/university/courses/electronics/labs
+ * https://wiki.analog.com/university/tools/adalm2000/devs/intro
+ * https://wiki.analog.com/university/tools/m2k/users/quick_start
+ *
+ * hdl_project: <m2k/standalone>
+ * board_revision: <A>
+ *
+ * Copyright (C) 2018-2019 Analog Devices Inc.
+ */
 /dts-v1/;
 
 #include "zynq-m2k.dtsi"
@@ -118,7 +131,7 @@
 &spi0 {
 	status = "okay";
 
-	converter_clock: pll@0 {
+	converter_clock: pll@1 {
 		compatible = "adi,adf4360-9";
 		reg = <1>;
 		spi-max-frequency = <2000000>;
@@ -135,7 +148,7 @@
 		adi,power-out-level-microamp = <5000>;
 	};
 
-	converter@1 {
+	converter@0 {
 		compatible = "adi,ad9963";
 		reg = <0>;
 		spi-max-frequency = <5000000>;
@@ -180,7 +193,7 @@
 				vref-supply = <&ref_1V2>;
 			};
 
-			dac@0f {
+			dac@f {
 				compatible = "adi,ad5627";
 				reg = <0x0f>;
 
@@ -364,11 +377,6 @@
 			compatible = "adi,axi-adc-trigger";
 			reg = <0x7c4c0000 0x10000>;
 			clocks = <&converter_clock>;
-		};
-
-		axi_sysid_0: axi-sysid-0@45000000 {
-			compatible = "adi,axi-sysid-1.00.a";
-			reg = <0x45000000 0x10000>;
 		};
 	};
 };

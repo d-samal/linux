@@ -4,6 +4,7 @@ set -e
 . ./ci/travis/lib.sh
 
 ENV_VARS="BUILD_TYPE DEFCONFIG ARCH CROSS_COMPILE DTS_FILES IMAGE"
+ENV_VARS="$ENV_VARS TRAVIS_COMMIT TRAVIS_PULL_REQUEST CHECK_ALL_ADI_DRIVERS_HAVE_BEEN_BUILT"
 
 if [ "$DO_NOT_DOCKERIZE" = "1" ] ; then
 	. ./ci/travis/run-build.sh
@@ -16,6 +17,8 @@ else
 			echo "export ${env}=${val}" >> "${FULL_BUILD_DIR}/env"
 		fi
 	done
-	prepare_docker_image "ubuntu:rolling"
-	run_docker_script run-build.sh "ubuntu:rolling"
+	export OS_TYPE=ubuntu
+	export OS_VERSION=rolling
+	prepare_docker_image
+	run_docker_script run-build.sh
 fi

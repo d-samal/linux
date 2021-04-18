@@ -1,0 +1,9 @@
+devices/adrv9001/public/include/adi_adrv9001_hal.h:66:extern int32_t(*adi_hal_SpiWrite)(void *devHalCfg, const uint8_t txData[], uint32_t numTxBytes);
+Binary file devices/adrv9001/public/src/adi_adrv9001_spi.o matches
+devices/adrv9001/public/src/adi_adrv9001_spi.c:153:        halError = adi_hal_SpiWrite(device->common.devHalInfo, &txData[0], numTxBytes);
+devices/adrv9001/public/src/adi_adrv9001_spi.c:188:        halError = adi_hal_SpiWrite(device->common.devHalInfo, &txData[0], numTxBytes);
+devices/adrv9001/public/src/adi_adrv9001_spi.c:228:        halError = adi_hal_SpiWrite(device->common.devHalInfo, &wrData[0], numWrBytes);
+devices/adrv9001/public/src/adi_adrv9001_spi.c:377:        halError = adi_hal_SpiWrite(device->common.devHalInfo, &wrData[0], numWrBytes);
+devices/adrv9001/public/src/adi_adrv9001_spi.c:479:        halError = adi_hal_SpiWrite(device->common.devHalInfo, &wrData[0], numWrBytes);
+platforms/linux_platform.c:414:int32_t (*adi_hal_SpiWrite)(void *devHalCfg, const uint8_t txData[], uint32_t numTxBytes) = linux_spi_write;
+Binary file platforms/linux_platform.o matches

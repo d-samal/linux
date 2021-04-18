@@ -1,5 +1,18 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Analog Devices ADRV9009
+ * https://wiki.analog.com/resources/eval/user-guides/adrv9009
+ * https://wiki.analog.com/resources/tools-software/linux-drivers/iio-transceiver/adrv9009
+ * https://wiki.analog.com/resources/tools-software/linux-software/adrv9009_advanced_plugin
+ *
+ * hdl_project: <adrv9009/zcu102>
+ * board_revision: <>
+ *
+ * Copyright (C) 2019 Analog Devices Inc.
+ */
 #include "zynqmp-zcu102-rev1.0.dts"
 #include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/jesd204/adxcvr.h>
 
 &i2c1 {
 	i2c-mux@75 {
@@ -201,7 +214,8 @@
 			compatible = "adi,axi-clkgen-2.00.a";
 			reg = <0x83c00000 0x10000>;
 			#clock-cells = <0>;
-			clocks = <&clk0_ad9528 1>;
+			clocks = <&zynqmp_clk 71>, <&clk0_ad9528 1>;
+			clock-names = "s_axi_aclk", "clkin1";
 			clock-output-names = "axi_tx_clkgen";
 		};
 
@@ -209,7 +223,8 @@
 			compatible = "adi,axi-clkgen-2.00.a";
 			reg = <0x83c10000 0x10000>;
 			#clock-cells = <0>;
-			clocks = <&clk0_ad9528 1>;
+			clocks = <&zynqmp_clk 71>, <&clk0_ad9528 1>;
+			clock-names = "s_axi_aclk", "clkin1";
 			clock-output-names = "axi_rx_clkgen";
 		};
 
@@ -217,7 +232,8 @@
 			compatible = "adi,axi-clkgen-2.00.a";
 			reg = <0x83c20000 0x10000>;
 			#clock-cells = <0>;
-			clocks = <&clk0_ad9528 1>;
+			clocks = <&zynqmp_clk 71>, <&clk0_ad9528 1>;
+			clock-names = "s_axi_aclk", "clkin1";
 			clock-output-names = "axi_rx_os_clkgen";
 		};
 
@@ -233,10 +249,9 @@
 			#clock-cells = <1>;
 			clock-output-names = "rx_gt_clk", "rx_out_clk";
 
-			adi,sys-clk-select = <0>;
-			adi,out-clk-select = <3>;
+			adi,sys-clk-select = <XCVR_CPLL>;
+			adi,out-clk-select = <XCVR_REFCLK>;
 			adi,use-lpm-enable;
-			adi,use-cpll-enable;
 		};
 
 		axi_adrv9009_adxcvr_rx_os: axi-adxcvr-rx-os@84a50000 {
@@ -251,10 +266,9 @@
 			#clock-cells = <1>;
 			clock-output-names = "rx_os_gt_clk", "rx_os_out_clk";
 
-			adi,sys-clk-select = <0>;
-			adi,out-clk-select = <3>;
+			adi,sys-clk-select = <XCVR_CPLL>;
+			adi,out-clk-select = <XCVR_REFCLK>;
 			adi,use-lpm-enable;
-			adi,use-cpll-enable;
 		};
 
 		axi_adrv9009_adxcvr_tx: axi-adxcvr-tx@84a80000 {
@@ -269,8 +283,8 @@
 			#clock-cells = <1>;
 			clock-output-names = "tx_gt_clk", "tx_out_clk";
 
-			adi,sys-clk-select = <3>;
-			adi,out-clk-select = <3>;
+			adi,sys-clk-select = <XCVR_QPLL>;
+			adi,out-clk-select = <XCVR_REFCLK>;
 		};
 
 		axi_sysid_0: axi-sysid-0@85000000 {
