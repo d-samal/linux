@@ -39,7 +39,10 @@
 
 #define AD7606B_CHANNEL(num)	\
 	AD760X_CHANNEL(num, BIT(IIO_CHAN_INFO_RAW) | BIT(IIO_CHAN_INFO_SCALE),\
-		0, BIT(IIO_CHAN_INFO_OVERSAMPLING_RATIO))
+		0,BIT(IIO_CHAN_INFO_OVERSAMPLING_RATIO) | BIT(IIO_CHAN_INFO_SAMP_FREQ))
+
+
+
 
 /**
  * struct ad7606_chip_info - chip specific information
@@ -116,6 +119,10 @@ struct ad7606_state {
 	struct gpio_descs		*gpio_os;
 	struct iio_trigger		*trig;
 	struct completion		completion;
+	int 				irq;
+//added by shivashankar
+
+	
 
 	/*
 	 * DMA (thus cache coherency maintenance) requires the
@@ -124,6 +131,9 @@ struct ad7606_state {
 	 */
 	unsigned short			data[20] ____cacheline_aligned;
 };
+
+
+
 
 /**
  * struct ad7606_bus_ops - driver bus operations
@@ -137,8 +147,10 @@ struct ad7606_state {
  */
 struct ad7606_bus_ops {
 	/* more methods added in future? */
-	int (*read_block)(struct device *dev, int num, void *data);
+	int (*read_block)(struct ad7606_state *st, int num, void *data);
 	int (*reg_read)(struct ad7606_state *st, unsigned int addr);
+	int (*offload_enable)(struct ad7606_state *st);
+	int (*offload_disable)(struct ad7606_state *st);
 	int (*reg_write)(struct ad7606_state *st,
 				unsigned int addr,
 				unsigned int val);

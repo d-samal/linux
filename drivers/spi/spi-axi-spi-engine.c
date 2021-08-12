@@ -302,6 +302,16 @@ bool spi_engine_offload_supported(struct spi_device *spi)
 }
 EXPORT_SYMBOL_GPL(spi_engine_offload_supported);
 
+int spi_engine_write_reg(struct spi_device *spi,unsigned int addr,unsigned int val)
+{
+	struct spi_master *master = spi->master;
+	struct spi_engine *spi_engine = spi_master_get_devdata(master);
+	
+	writel(val, spi_engine->base + (addr<<2));
+	return 0;
+}
+EXPORT_SYMBOL_GPL(spi_engine_write_reg);
+
 void spi_engine_offload_enable(struct spi_device *spi, bool enable)
 {
 	struct spi_master *master = spi->master;
@@ -671,12 +681,29 @@ static int spi_engine_probe(struct platform_device *pdev)
 
 	spin_lock_init(&spi_engine->lock);
 
+	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	spi_engine->base = devm_ioremap_resource(&pdev->dev, res);
+	if (IS_ERR(spi_engine->base)) {
+		ret = PTR_ERR(spi_engine->base);
+		goto err_put_master;
+	}
+
+	version = readl(spi_engine->base + SPI_ENGINE_REG_VERSION);
+	/*if (SPI_ENGINE_VERSION_MAJOR(version) != 1) {
+		dev_err(&pdev->dev, "Unsupported peripheral version %u.%u.%c\n",
+			SPI_ENGINE_VERSION_MAJOR(version),
+			SPI_ENGINE_VERSION_MINOR(version),
+			SPI_ENGINE_VERSION_PATCH(version));
+		ret = -ENODEV;
+		goto err_put_master;
+	}*/
+
 	spi_engine->clk = devm_clk_get(&pdev->dev, "s_axi_aclk");
 	if (IS_ERR(spi_engine->clk)) {
 		ret = PTR_ERR(spi_engine->clk);
 		goto err_put_master;
 	}
-
+	
 	spi_engine->ref_clk = devm_clk_get(&pdev->dev, "spi_clk");
 	if (IS_ERR(spi_engine->ref_clk)) {
 		ret = PTR_ERR(spi_engine->ref_clk);
@@ -691,23 +718,6 @@ static int spi_engine_probe(struct platform_device *pdev)
 	if (ret)
 		goto err_clk_disable;
 
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	spi_engine->base = devm_ioremap_resource(&pdev->dev, res);
-	if (IS_ERR(spi_engine->base)) {
-		ret = PTR_ERR(spi_engine->base);
-		goto err_ref_clk_disable;
-	}
-
-	version = readl(spi_engine->base + SPI_ENGINE_REG_VERSION);
-	if (SPI_ENGINE_VERSION_MAJOR(version) != 1) {
-		dev_err(&pdev->dev, "Unsupported peripheral version %u.%u.%c\n",
-			SPI_ENGINE_VERSION_MAJOR(version),
-			SPI_ENGINE_VERSION_MINOR(version),
-			SPI_ENGINE_VERSION_PATCH(version));
-		ret = -ENODEV;
-		goto err_ref_clk_disable;
-	}
-
 	writel_relaxed(0x00, spi_engine->base + SPI_ENGINE_REG_RESET);
 	writel_relaxed(0xff, spi_engine->base + SPI_ENGINE_REG_INT_PENDING);
 	writel_relaxed(0x00, spi_engine->base + SPI_ENGINE_REG_INT_ENABLE);
@@ -715,7 +725,7 @@ static int spi_engine_probe(struct platform_device *pdev)
 	ret = request_irq(irq, spi_engine_irq, 0, pdev->name, master);
 	if (ret)
 		goto err_ref_clk_disable;
-
+	
 	master->dev.of_node = pdev->dev.of_node;
 	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_3WIRE;
 	master->max_speed_hz = clk_get_rate(spi_engine->ref_clk) / 2;

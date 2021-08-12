@@ -15,6 +15,7 @@ bool spi_engine_offload_supported(struct spi_device *spi);
 void spi_engine_offload_enable(struct spi_device *spi, bool enable);
 int spi_engine_offload_load_msg(struct spi_device *spi,
 	struct spi_message *msg);
+int spi_engine_write_reg(struct spi_device *spi,unsigned int addr,unsigned int val);
 
 #else
 
@@ -31,6 +32,10 @@ static inline int spi_engine_offload_load_msg(struct spi_device *spi,
 	struct spi_message *msg)
 {
 	return -ENODEV;
+}
+
+static inline int spi_engine_write_reg(struct spi_device *spi,unsigned int addr,unsigned int val)
+{
 }
 
 #endif

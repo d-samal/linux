@@ -10,10 +10,27 @@
 #include <linux/types.h>
 #include <linux/err.h>
 
+#include <linux/spi/spi-engine.h>
 #include <linux/iio/iio.h>
+
 #include "ad7606.h"
 
 #define MAX_SPI_FREQ_HZ		23500000	/* VDRIVE above 4.75 V */
+
+#define burst_length_reg	((0x112)<<2)	
+#define data_write_reg  	((0x114)<<2)
+#define data_read_reg   	((0x113)<<2)
+#define cnvst_en_reg    	((0x110)<<2)
+#define up_cnv_rate_reg   	((0x111)<<2)
+#define PCORE_REG_VERSION	((0x100)<<2)
+#define PCORE_VERSION(x)	((x >> 12) & 0xf)
+
+/* AD7606_RANGE_CH_X_Y */
+#define AD7606_RANGE_CH_MSK(ch)		(GENMASK(3, 0) << (4 * ((ch) % 2)))
+#define AD7606_RANGE_CH_MODE(ch, mode)	\
+	((GENMASK(3, 0) & mode) << (4 * ((ch) % 2)))
+#define AD7606_RANGE_CH_ADDR(ch)	(0x03 + ((ch) >> 1))
+#define AD7606_OS_MODE			0x08
 
 #define AD7616_CONFIGURATION_REGISTER	0x02
 #define AD7616_OS_MASK			GENMASK(4,  2)
@@ -26,6 +43,7 @@
 
 #define AD7606_CONFIGURATION_REGISTER	0x02
 #define AD7606_SINGLE_DOUT		0x0
+#define AD7606_QUAD_DOUT		0x10
 
 /* AD7606_RANGE_CH_X_Y */
 #define AD7606_RANGE_CH_MSK(ch)		(GENMASK(3, 0) << (4 * ((ch) % 2)))
@@ -80,48 +98,70 @@ static u16 ad7616_spi_rd_wr_cmd(int addr, char isWriteOp)
 	return ((addr & 0x7F) << 1) | ((isWriteOp & 0x1) << 7);
 }
 
-static int ad7606_spi_read_block(struct device *dev,
+static int ad7606_spi_read_block(struct ad7606_state *st,
 				 int count, void *buf)
 {
-	struct spi_device *spi = to_spi_device(dev);
-	int i, ret;
-	unsigned short *data = buf;
-	__be16 *bdata = buf;
-
-	ret = spi_read(spi, buf, count * 2);
-	if (ret < 0) {
-		dev_err(&spi->dev, "SPI read error\n");
+	int ret;
+	struct spi_device *spi = to_spi_device(st->dev);
+	
+	struct spi_transfer xfer[] = {
+			{
+			.rx_buf = &st->data[2],
+			.len = 4,
+			.bits_per_word = 32,
+			},
+			{
+			.rx_buf = &st->data[4],
+			.len = 4,
+			.bits_per_word = 32,
+			},
+			{
+			.rx_buf = &st->data[6],
+			.len = 4,
+			.bits_per_word = 32,
+			},
+			{
+			.rx_buf = &st->data[8],
+			.len = 4,
+			.bits_per_word = 32,
+			}
+			
+		};	
+	
+	uint8_t val = st->bops->reg_read(st,AD7606_CONFIGURATION_REGISTER);
+	st->bops->reg_write(st,AD7606_CONFIGURATION_REGISTER,AD7606_SINGLE_DOUT);// in single dout mode
+	spi_engine_write_reg(spi,0x111,0x82);//to configure up_cnv rate
+	spi_engine_write_reg(spi,0x110,0x03);//to enable cnvst and reset high
+	ndelay(800);
+	spi_engine_write_reg(spi,0x110,0x00);//to disable cnvst and reset low
+	ret = spi_sync_transfer(spi, xfer, ARRAY_SIZE(xfer));
+	if (ret < 0)
 		return ret;
-	}
-
-	for (i = 0; i < count; i++)
-		data[i] = be16_to_cpu(bdata[i]);
+	st->bops->reg_write(st,AD7606_CONFIGURATION_REGISTER, val);//put in default setting
 
 	return 0;
 }
 
+
 static int ad7606_spi_reg_read(struct ad7606_state *st, unsigned int addr)
 {
 	struct spi_device *spi = to_spi_device(st->dev);
-	struct spi_transfer t[] = {
-		{
+
+		struct spi_transfer t[] = {
+			{
 			.tx_buf = &st->data[0],
-			.len = 2,
-			.cs_change = 0,
-		}, {
-			.rx_buf = &st->data[1],
-			.len = 2,
-		},
-	};
+			.rx_buf = &st->data[2],
+			.len = 4,
+			.bits_per_word = 32,
+			}
+		};
+
 	int ret;
-
 	st->data[0] = cpu_to_be16(st->bops->rd_wr_cmd(addr, 0) << 8);
-
 	ret = spi_sync_transfer(spi, t, ARRAY_SIZE(t));
 	if (ret < 0)
 		return ret;
-
-	return be16_to_cpu(st->data[1]);
+	return be16_to_cpu(st->data[2]) >> 8;
 }
 
 static int ad7606_spi_reg_write(struct ad7606_state *st,
@@ -129,11 +169,49 @@ static int ad7606_spi_reg_write(struct ad7606_state *st,
 				unsigned int val)
 {
 	struct spi_device *spi = to_spi_device(st->dev);
-
 	st->data[0] = cpu_to_be16((st->bops->rd_wr_cmd(addr, 1) << 8) |
 				  (val & 0x1FF));
 
 	return spi_write(spi, &st->data[0], sizeof(st->data[0]));
+}
+
+
+static int ad7606_spi_offload_enable(struct ad7606_state *st)
+{
+	struct spi_device *spi = to_spi_device(st->dev);
+	struct spi_message msg;
+	int ret;
+	unsigned int rx_data[8];
+	
+	struct spi_transfer xfer[] = {
+			{
+			.rx_buf = rx_data,
+			.len = 16,
+			.bits_per_word = 32,
+			}
+		};	
+
+	spi_engine_write_reg(spi,0x111,0x82);//to configure up_cnv rate BE
+	spi_engine_write_reg(spi,0x110,0x03);//to enable cnvst and reset high
+
+	spi_bus_lock(spi->master);
+	spi_message_init_with_transfers(&msg, xfer, ARRAY_SIZE(xfer));
+	ret = spi_engine_offload_load_msg(spi, &msg);
+	if (ret < 0)
+		return ret;
+	spi_engine_offload_enable(spi, true);   
+
+	return ret;
+}
+
+static int ad7606_spi_offload_disable(struct ad7606_state *st)
+{
+	struct spi_device *spi = to_spi_device(st->dev);
+	spi_engine_write_reg(spi,0x110,0x00);//to disable cnvst and reset low
+	spi_engine_offload_enable(spi, false);
+	spi_bus_unlock(spi->master);
+
+	return 0;
 }
 
 static int ad7606_spi_write_mask(struct ad7606_state *st,
@@ -176,7 +254,6 @@ static int ad7616_write_os_sw(struct iio_dev *indio_dev, int val)
 static int ad7606_write_scale_sw(struct iio_dev *indio_dev, int ch, int val)
 {
 	struct ad7606_state *st = iio_priv(indio_dev);
-
 	return ad7606_spi_write_mask(st,
 				     AD7606_RANGE_CH_ADDR(ch),
 				     AD7606_RANGE_CH_MSK(ch),
@@ -186,7 +263,6 @@ static int ad7606_write_scale_sw(struct iio_dev *indio_dev, int ch, int val)
 static int ad7606_write_os_sw(struct iio_dev *indio_dev, int val)
 {
 	struct ad7606_state *st = iio_priv(indio_dev);
-
 	return ad7606_spi_reg_write(st, AD7606_OS_MODE, val);
 }
 
@@ -206,7 +282,7 @@ static int ad7606B_sw_mode_config(struct iio_dev *indio_dev)
 		gpiod_set_array_value(ARRAY_SIZE(buf),
 				      st->gpio_os->desc, buf);
 	}
-	/* OS of 128 and 256 are available only in software mode */
+	/* OS of 128 and 256 are available only in softwar(spi, false);*/
 	st->oversampling_avail = ad7606B_oversampling_avail;
 	st->num_os_ratios = ARRAY_SIZE(ad7606B_oversampling_avail);
 
@@ -216,7 +292,7 @@ static int ad7606B_sw_mode_config(struct iio_dev *indio_dev)
 	/* Configure device spi to output on a single channel */
 	st->bops->reg_write(st,
 			    AD7606_CONFIGURATION_REGISTER,
-			    AD7606_SINGLE_DOUT);
+			   AD7606_QUAD_DOUT); //converted to the quad Dout
 	/*
 	 * Scale can be configured individually for each channel
 	 * in software mode.
@@ -246,6 +322,8 @@ static int ad7616_sw_mode_config(struct iio_dev *indio_dev)
 			      AD7616_BURST_MODE | AD7616_SEQEN_MODE);
 }
 
+
+
 static const struct ad7606_bus_ops ad7606_spi_bops = {
 	.read_block = ad7606_spi_read_block,
 };
@@ -261,6 +339,8 @@ static const struct ad7606_bus_ops ad7616_spi_bops = {
 
 static const struct ad7606_bus_ops ad7606B_spi_bops = {
 	.read_block = ad7606_spi_read_block,
+	.offload_enable = ad7606_spi_offload_enable,
+	.offload_disable = ad7606_spi_offload_disable,
 	.reg_read = ad7606_spi_reg_read,
 	.reg_write = ad7606_spi_reg_write,
 	.write_mask = ad7606_spi_write_mask,
@@ -284,7 +364,7 @@ static int ad7606_spi_probe(struct spi_device *spi)
 		bops = &ad7606_spi_bops;
 		break;
 	}
-
+ 	
 	return ad7606_probe(&spi->dev, spi->irq, NULL,
 			    id->name, id->driver_data,
 			    bops);

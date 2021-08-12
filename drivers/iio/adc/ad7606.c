@@ -17,6 +17,8 @@
 #include <linux/sysfs.h>
 #include <linux/util_macros.h>
 
+#include <linux/spi/spi.h>
+
 #include <linux/iio/iio.h>
 #include <linux/iio/buffer.h>
 #include <linux/iio/sysfs.h>
@@ -24,9 +26,20 @@
 #include <linux/iio/triggered_buffer.h>
 #include <linux/iio/trigger_consumer.h>
 
-#include <linux/spi/spi.h>
+#include <linux/iio/buffer_impl.h>
+#include <linux/iio/buffer-dma.h>
+#include <linux/iio/buffer-dmaengine.h>
+#include <linux/dmaengine.h>
+#include <linux/dma-mapping.h>
 
 #include "ad7606.h"
+#include "cf_axi_adc.h"
+
+
+
+#define AD7606_OUTPUT_MODE_TWOS_COMPLEMENT	0x01
+
+uint8_t exec = 0;
 
 /*
  * Scales are computed as 5000/32768 and 10000/32768 respectively,
@@ -48,6 +61,20 @@ static const unsigned int ad7616_oversampling_avail[8] = {
 	1, 2, 4, 8, 16, 32, 64, 128,
 };
 
+static const struct axiadc_chip_info conv_chip_info = {
+	.name = "ad7606_axi_adc",
+	.max_rate = 800000UL,
+	.num_channels = 8,
+	.channel[0] = AD7606B_CHANNEL(0),
+	.channel[1] = AD7606B_CHANNEL(1),
+	.channel[2] = AD7606B_CHANNEL(2),
+	.channel[3] = AD7606B_CHANNEL(3),
+	.channel[4] = AD7606B_CHANNEL(4),
+	.channel[5] = AD7606B_CHANNEL(5),
+	.channel[6] = AD7606B_CHANNEL(6),
+	.channel[7] = AD7606B_CHANNEL(7),
+};
+
 static int ad7606_reset(struct ad7606_state *st)
 {
 	if (st->gpio_reset) {
@@ -60,13 +87,53 @@ static int ad7606_reset(struct ad7606_state *st)
 	return -ENODEV;
 }
 
+static bool ad7606_has_axi_adc(struct device *dev)
+{
+	return device_property_present(dev, "spibus-connected");
+}
+
+static struct ad7606_state *ad7606_get_data(struct iio_dev *indio_dev)
+{
+	struct axiadc_converter *conv;
+
+	if (ad7606_has_axi_adc(&indio_dev->dev)) {
+		/* AXI ADC*/
+		conv = iio_device_get_drvdata(indio_dev);
+		return conv->phy;
+	} else {
+		return iio_priv(indio_dev);
+	}
+}
+
+static int ad7606_buffer_postenable(struct iio_dev *indio_dev)
+{
+	struct ad7606_state *st = ad7606_get_data(indio_dev);
+	int ret=0;
+	exec = 1;
+	ret =st->bops->offload_enable(st);
+	return 0;
+}
+
+static int ad7606_buffer_predisable(struct iio_dev *indio_dev)
+{
+	struct ad7606_state *st = ad7606_get_data(indio_dev);
+	int ret=0;
+	ret =st->bops->offload_disable(st);
+	exec =0;
+	return 0;
+}
+
 static int ad7606_reg_access(struct iio_dev *indio_dev,
 			     unsigned int reg,
 			     unsigned int writeval,
 			     unsigned int *readval)
 {
-	struct ad7606_state *st = iio_priv(indio_dev);
-	int ret;
+	struct ad7606_state *st = ad7606_get_data(indio_dev);
+	int ret=0;
+	
+	if (exec){
+		ad7606_buffer_predisable(indio_dev);
+	}	
 
 	mutex_lock(&st->lock);
 	if (readval) {
@@ -78,48 +145,24 @@ static int ad7606_reg_access(struct iio_dev *indio_dev,
 	} else {
 		ret = st->bops->reg_write(st, reg, writeval);
 	}
+
 err_unlock:
 	mutex_unlock(&st->lock);
 	return ret;
 }
+
 static int ad7606_read_samples(struct ad7606_state *st)
 {
 	unsigned int num = st->chip_info->num_channels - 1;
-	u16 *data = st->data;
-	int ret;
-
-	/*
-	 * The frstdata signal is set to high while and after reading the sample
-	 * of the first channel and low for all other channels. This can be used
-	 * to check that the incoming data is correctly aligned. During normal
-	 * operation the data should never become unaligned, but some glitch or
-	 * electrostatic discharge might cause an extra read or clock cycle.
-	 * Monitoring the frstdata signal allows to recover from such failure
-	 * situations.
-	 */
-
-	if (st->gpio_frstdata) {
-		ret = st->bops->read_block(st->dev, 1, data);
-		if (ret)
-			return ret;
-
-		if (!gpiod_get_value(st->gpio_frstdata)) {
-			ad7606_reset(st);
-			return -EIO;
-		}
-
-		data++;
-		num--;
-	}
-
-	return st->bops->read_block(st->dev, num, data);
+	u16 *data;
+	return st->bops->read_block(st, num, data);
 }
 
 static irqreturn_t ad7606_trigger_handler(int irq, void *p)
 {
 	struct iio_poll_func *pf = p;
 	struct iio_dev *indio_dev = pf->indio_dev;
-	struct ad7606_state *st = iio_priv(indio_dev);
+	struct ad7606_state *st = ad7606_get_data(indio_dev);
 	int ret;
 
 	mutex_lock(&st->lock);
@@ -140,24 +183,25 @@ static irqreturn_t ad7606_trigger_handler(int irq, void *p)
 
 static int ad7606_scan_direct(struct iio_dev *indio_dev, unsigned int ch)
 {
-	struct ad7606_state *st = iio_priv(indio_dev);
-	int ret;
+	struct ad7606_state *st = ad7606_get_data(indio_dev);
+	int ret;u16 *data = st->data;
+	if (exec){
+		ad7606_buffer_predisable(indio_dev);
+	}
 
-	gpiod_set_value(st->gpio_convst, 1);
 	ret = wait_for_completion_timeout(&st->completion,
 					  msecs_to_jiffies(1000));
 	if (!ret) {
 		ret = -ETIMEDOUT;
-		goto error_ret;
+		//goto error_ret;
 	}
-
+	int i;
 	ret = ad7606_read_samples(st);
 	if (ret == 0)
-		ret = st->data[ch];
+		ret = st->data[2+ch];
 
 error_ret:
-	gpiod_set_value(st->gpio_convst, 0);
-
+	return ret;
 	return ret;
 }
 
@@ -168,8 +212,8 @@ static int ad7606_read_raw(struct iio_dev *indio_dev,
 			   long m)
 {
 	int ret, ch = 0;
-	struct ad7606_state *st = iio_priv(indio_dev);
-
+	struct ad7606_state *st = ad7606_get_data(indio_dev);
+	
 	switch (m) {
 	case IIO_CHAN_INFO_RAW:
 		ret = iio_device_claim_direct_mode(indio_dev);
@@ -189,6 +233,9 @@ static int ad7606_read_raw(struct iio_dev *indio_dev,
 		*val = 0;
 		*val2 = st->scale_avail[st->range[ch]];
 		return IIO_VAL_INT_PLUS_MICRO;
+	case IIO_CHAN_INFO_SAMP_FREQ:
+		*val = 800000;
+		return IIO_VAL_INT;
 	case IIO_CHAN_INFO_OVERSAMPLING_RATIO:
 		*val = st->oversampling;
 		return IIO_VAL_INT;
@@ -226,7 +273,6 @@ static IIO_DEVICE_ATTR_RO(in_voltage_scale_available, 0);
 static int ad7606_write_scale_hw(struct iio_dev *indio_dev, int ch, int val)
 {
 	struct ad7606_state *st = iio_priv(indio_dev);
-
 	gpiod_set_value(st->gpio_range, val);
 
 	return 0;
@@ -257,7 +303,7 @@ static int ad7606_write_raw(struct iio_dev *indio_dev,
 			    int val2,
 			    long mask)
 {
-	struct ad7606_state *st = iio_priv(indio_dev);
+	struct ad7606_state *st = ad7606_get_data(indio_dev);
 	int i, ret, ch = 0;
 
 	switch (mask) {
@@ -358,6 +404,18 @@ static const struct iio_chan_spec ad7606_channels[] = {
 	AD7606_CHANNEL(7),
 };
 
+static const struct iio_chan_spec ad7606B_channels[] = {
+	IIO_CHAN_SOFT_TIMESTAMP(8),
+	AD7606B_CHANNEL(0),
+	AD7606B_CHANNEL(1),
+	AD7606B_CHANNEL(2),
+	AD7606B_CHANNEL(3),
+	AD7606B_CHANNEL(4),
+	AD7606B_CHANNEL(5),
+	AD7606B_CHANNEL(6),
+	AD7606B_CHANNEL(7),
+};
+
 /*
  * The current assumption that this driver makes for AD7616, is that it's
  * working in Hardware Mode with Serial, Burst and Sequencer modes activated.
@@ -387,6 +445,9 @@ static const struct iio_chan_spec ad7616_channels[] = {
 	AD7606_CHANNEL(14),
 	AD7606_CHANNEL(15),
 };
+
+
+
 
 static const struct ad7606_chip_info ad7606_chip_info_tbl[] = {
 	/* More devices added in future */
@@ -432,11 +493,10 @@ static int ad7606_request_gpios(struct ad7606_state *st)
 {
 	struct device *dev = st->dev;
 
-	st->gpio_convst = devm_gpiod_get(dev, "adi,conversion-start",
-					 GPIOD_OUT_LOW);
+	st->gpio_convst = devm_gpiod_get(dev, "adi,conversion-start",GPIOD_OUT_LOW);
 	if (IS_ERR(st->gpio_convst))
 		return PTR_ERR(st->gpio_convst);
-
+	
 	st->gpio_reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
 	if (IS_ERR(st->gpio_reset))
 		return PTR_ERR(st->gpio_reset);
@@ -474,8 +534,7 @@ static int ad7606_request_gpios(struct ad7606_state *st)
 static irqreturn_t ad7606_interrupt(int irq, void *dev_id)
 {
 	struct iio_dev *indio_dev = dev_id;
-	struct ad7606_state *st = iio_priv(indio_dev);
-
+	struct ad7606_state *st = ad7606_get_data(indio_dev);
 	if (iio_buffer_enabled(indio_dev)) {
 		gpiod_set_value(st->gpio_convst, 0);
 		iio_trigger_poll_chained(st->trig);
@@ -489,31 +548,25 @@ static irqreturn_t ad7606_interrupt(int irq, void *dev_id)
 static int ad7606_validate_trigger(struct iio_dev *indio_dev,
 				   struct iio_trigger *trig)
 {
-	struct ad7606_state *st = iio_priv(indio_dev);
-
+	struct ad7606_state *st = ad7606_get_data(indio_dev);
 	if (st->trig != trig)
 		return -EINVAL;
 
 	return 0;
 }
 
-static int ad7606_buffer_postenable(struct iio_dev *indio_dev)
+static int hw_submit_block(struct iio_dma_buffer_queue *queue,
+			   struct iio_dma_buffer_block *block)
 {
-	struct ad7606_state *st = iio_priv(indio_dev);
-
-	gpiod_set_value(st->gpio_convst, 1);
-
-	return 0;
+	block->block.bytes_used = block->block.size;
+	return iio_dmaengine_buffer_submit_block(queue, block, DMA_DEV_TO_MEM);
 }
 
-static int ad7606_buffer_predisable(struct iio_dev *indio_dev)
-{
-	struct ad7606_state *st = iio_priv(indio_dev);
 
-	gpiod_set_value(st->gpio_convst, 0);
-
-	return 0;
-}
+static const struct iio_dma_buffer_ops dma_buffer_ops = {
+	.submit = hw_submit_block,
+	.abort = iio_dmaengine_buffer_abort,
+};
 
 static const struct iio_buffer_setup_ops ad7606_buffer_ops = {
 	.postenable = &ad7606_buffer_postenable,
@@ -548,6 +601,7 @@ static const struct iio_info ad7606_info_os = {
 };
 
 static const struct iio_info ad7606_info_range = {
+	.attrs = &ad7606_attribute_group_os_and_range,
 	.read_raw = &ad7606_read_raw,
 	.write_raw = &ad7606_write_raw,
 	.attrs = &ad7606_attribute_group_range,
@@ -558,11 +612,56 @@ static const struct iio_trigger_ops ad7606_trigger_ops = {
 	.validate_device = iio_trigger_validate_own_device,
 };
 
+
 static void ad7606_regulator_disable(void *data)
 {
 	struct ad7606_state *st = data;
-
 	regulator_disable(st->reg);
+} 
+
+static int ad7606_post_setup(struct iio_dev *indio_dev){
+	indio_dev->setup_ops = &ad7606_buffer_ops;
+	return 0;
+}
+
+static int ad7606_register_axi_adc(struct ad7606_state *st, struct iio_dev *indio_dev)
+{
+	struct axiadc_converter	*conv;
+	struct spi_device *spi = to_spi_device(st->dev);
+
+	conv = devm_kzalloc(st->dev, sizeof(*conv), GFP_KERNEL);
+	if (conv == NULL)
+		return -ENOMEM;
+
+	conv->spi = spi;
+	conv->clk = NULL;
+	conv->chip_info = &conv_chip_info;
+	conv->adc_output_mode = AD7606_OUTPUT_MODE_TWOS_COMPLEMENT;
+	conv->reg_access = &ad7606_reg_access;
+	conv->write_raw = &ad7606_write_raw;
+	conv->read_raw = &ad7606_read_raw;
+	conv->post_setup = &ad7606_post_setup;
+	conv->attrs = &ad7606_attribute_group_os_and_range;
+	conv->phy = st;
+	/* Without this, the axi_adc won't find the converter data */
+	spi_set_drvdata(spi, conv);
+
+	return 0;
+}
+
+
+
+static int ad7606_register(struct ad7606_state *st, struct iio_dev *indio_dev)
+{
+	struct iio_buffer *buffer;
+	buffer = devm_iio_dmaengine_buffer_alloc(indio_dev->dev.parent, "rx",
+						&dma_buffer_ops, indio_dev);
+	if (IS_ERR(buffer))
+		return PTR_ERR(buffer);
+
+	iio_device_attach_buffer(indio_dev, buffer);
+
+	return devm_iio_device_register(st->dev, indio_dev);
 }
 
 int ad7606_probe(struct device *dev, int irq, void __iomem *base_address,
@@ -572,14 +671,13 @@ int ad7606_probe(struct device *dev, int irq, void __iomem *base_address,
 	struct ad7606_state *st;
 	int ret;
 	struct iio_dev *indio_dev;
-
 	indio_dev = devm_iio_device_alloc(dev, sizeof(*st));
 	if (!indio_dev)
 		return -ENOMEM;
 
 	st = iio_priv(indio_dev);
 	dev_set_drvdata(dev, indio_dev);
-
+	
 	st->dev = dev;
 	mutex_init(&st->lock);
 	st->bops = bops;
@@ -588,7 +686,7 @@ int ad7606_probe(struct device *dev, int irq, void __iomem *base_address,
 	st->range[0] = 0;
 	st->oversampling = 1;
 	st->scale_avail = ad7606_scale_avail;
-	st->num_scales = ARRAY_SIZE(ad7606_scale_avail);
+	st->num_scales = ARRAY_SIZE(ad7606B_scale_avail);
 
 	st->reg = devm_regulator_get(dev, "avcc");
 	if (IS_ERR(st->reg))
@@ -627,12 +725,13 @@ int ad7606_probe(struct device *dev, int irq, void __iomem *base_address,
 		else
 			indio_dev->info = &ad7606_info_no_os_or_range;
 	}
-
-	indio_dev->modes = INDIO_DIRECT_MODE;
+	
+	indio_dev->modes = INDIO_DIRECT_MODE | INDIO_BUFFER_HARDWARE;
 	indio_dev->name = name;
 	indio_dev->channels = st->chip_info->channels;
 	indio_dev->num_channels = st->chip_info->num_channels;
-
+	indio_dev->setup_ops = &ad7606_buffer_ops;
+	
 	ret = ad7606_reset(st);
 	if (ret)
 		dev_warn(st->dev, "failed to RESET: no RESET GPIO specified\n");
@@ -652,49 +751,24 @@ int ad7606_probe(struct device *dev, int irq, void __iomem *base_address,
 
 	if (st->sw_mode_en) {
 		indio_dev->info = &ad7606_info_os_range_and_debug;
-
 		/* Scale of 0.076293 is only available in sw mode */
 		st->scale_avail = ad7606B_scale_avail;
 		st->num_scales = ARRAY_SIZE(ad7606B_scale_avail);
-
 		/* After reset, in software mode, ±10 V is set by default */
-		memset32(st->range, 2, ARRAY_SIZE(st->range));
-
+		memset32(st->range, 1, ARRAY_SIZE(st->range));
 		ret = st->bops->sw_mode_config(indio_dev);
 	}
 
 	init_completion(&st->completion);
 
-	st->trig = devm_iio_trigger_alloc(dev, "%s-dev%d",
-					  indio_dev->name, indio_dev->id);
-	if (!st->trig)
-		return -ENOMEM;
-
-	st->trig->ops = &ad7606_trigger_ops;
-	st->trig->dev.parent = dev;
-	iio_trigger_set_drvdata(st->trig, indio_dev);
-	ret = devm_iio_trigger_register(dev, st->trig);
-	if (ret)
-		return ret;
-
-	indio_dev->trig = iio_trigger_get(st->trig);
-
-	ret = devm_request_threaded_irq(dev, irq,
-					NULL,
-					&ad7606_interrupt,
-					IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
-					name, indio_dev);
-	if (ret)
-		return ret;
-
-	ret = devm_iio_triggered_buffer_setup(dev, indio_dev,
-					      &iio_pollfunc_store_time,
-					      &ad7606_trigger_handler,
-					      &ad7606_buffer_ops);
-	if (ret)
-		return ret;
-
-	return devm_iio_device_register(dev, indio_dev);
+	/*  If there is a reference to a dma channel, the device is not using
+	 *  the axi adc
+	 */
+	if (device_property_present(st->dev, "dmas"))
+		ret = ad7606_register(st, indio_dev);
+	else
+		ret = ad7606_register_axi_adc(st,indio_dev);
+	return ret;
 }
 EXPORT_SYMBOL_GPL(ad7606_probe);
 
