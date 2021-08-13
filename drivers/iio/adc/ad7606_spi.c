@@ -9,6 +9,7 @@
 #include <linux/spi/spi.h>
 #include <linux/types.h>
 #include <linux/err.h>
+#include <linux/delay.h>
 
 #include <linux/spi/spi-engine.h>
 #include <linux/iio/iio.h>
