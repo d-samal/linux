@@ -175,6 +175,11 @@ enum ad7606_supported_device_ids {
 	ID_AD7616,
 };
 
+enum ad7606_mode {
+	ADC_mode,
+	reg_mode,
+};
+
 #ifdef CONFIG_PM_SLEEP
 extern const struct dev_pm_ops ad7606_pm_ops;
 #define AD7606_PM_OPS (&ad7606_pm_ops)

@@ -98,21 +98,32 @@ static void ad7606_par_burst_length(struct ad7606_state *st,
 	writel(count , (unsigned long)st->base_address + burst_length_reg);
 }
 
+void switch_register_ADC_mode(struct ad7606_state *st, char mode)
+{
+	ad7606_par_burst_length(st,0);
+	if (mode == reg_mode){
+	writel( 0xAF , (unsigned long)st->base_address + data_write_reg);//to switch to register mode
+	readl((unsigned long)st->base_address + data_read_reg);//to switch to register mode}
+	}else {
+	writel( 0x00 , (unsigned long)st->base_address + data_write_reg);//to switch to ADC mode
+	}
+}
+
 static int ad7606_par16_read_block(struct ad7606_state *st,
 				   int count, void *buf)
 {
 	int i;
 	unsigned short *data = buf;
-	ad7606_par_burst_length(st,0);
-	//writel(0xd0,(unsigned long)st->base_address + up_cnv_rate_reg);// to configure convst rate
-	//writel(0x03,(unsigned long)st->base_address + cnvst_en_reg);// to enable convst signal
-	//ndelay(800);
-	//writel(0x00,(unsigned long)st->base_address + cnvst_en_reg);// to disable convst signal
+	switch_register_ADC_mode(st,ADC_mode);
+	writel(0xd0,(unsigned long)st->base_address + up_cnv_rate_reg);// to configure convst rate
+	writel(0x03,(unsigned long)st->base_address + cnvst_en_reg);// to enable convst signal
+	ndelay(800);
+	writel(0x00,(unsigned long)st->base_address + cnvst_en_reg);// to disable convst signal
 	for(i=0; i<count; i++){
 		 st->data[i+2]=(u16)(readl((unsigned long)st->base_address + data_read_reg));}
+	switch_register_ADC_mode(st,reg_mode);
 	return 0;
 }
-
 
 static int ad7606_par_reg_write(struct ad7606_state *st,
 				  unsigned int addr, unsigned int val)
@@ -127,17 +138,17 @@ static int ad7606_par_reg_write(struct ad7606_state *st,
 static int ad7606_par_reg_read(struct ad7606_state *st,
 				  unsigned int addr)
 {
-	uint16_t temp;uint16_t temp1;
+	uint16_t temp;
 	ad7606_par_burst_length(st,0);
 	temp= (u16)((0x80 | (addr & 0x007f))<<8);
 	writel( temp , (unsigned long)st->base_address + data_write_reg);
-	temp1= (uint16_t)(readl((unsigned long)st->base_address + data_read_reg));
-	return temp1;
+	return (uint8_t)(readl((unsigned long)st->base_address + data_read_reg));;
 }
 
 static int ad7606_par_data_read(struct ad7606_state *st)
 {
 	unsigned int reg;
+	switch_register_ADC_mode(st,ADC_mode);
 	writel(0xd0,(unsigned long)st->base_address + up_cnv_rate_reg);// to configure convst rate
 	writel(0x03,(unsigned long)st->base_address + cnvst_en_reg);// to enable convst signal
 	ad7606_par_burst_length(st,3);
@@ -151,7 +162,7 @@ static int ad7606_par_data_write(struct ad7606_state *st)
 {
 	unsigned int reg;
 	writel(0x00,(unsigned long)st->base_address + cnvst_en_reg);// to disable convst signal
-	ad7606_par_burst_length(st,1);
+	switch_register_ADC_mode(st,reg_mode);
 	return 0;
 }
 
@@ -273,6 +284,8 @@ static int ad7606_par_probe(struct spi_device *spi)
 			    id->name,id->driver_data,
 			    bops);
 }
+
+
 
 static const struct of_device_id ad7606_of_match[] = {
 	{ .compatible = "adi,ad7605-4" },
