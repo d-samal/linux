@@ -6,6 +6,10 @@
  *
  * Licensed under the GPL-2.
  */
+#include <linux/bitfield.h>
+#include <linux/delay.h>
+#include <linux/interrupt.h>
+#include <linux/of.h>
 
 #include <linux/device.h>
 #include <linux/kernel.h>
@@ -16,12 +20,17 @@
 #include <linux/err.h>
 #include <linux/module.h>
 #include <linux/bitops.h>
-
+#include <linux/spi/spi-engine.h>
+#include <linux/dma-mapping.h>
+#include <linux/dmaengine.h>
+#include <linux/gpio/consumer.h>
 #include <linux/iio/iio.h>
-#include <linux/iio/sysfs.h>
 #include <linux/iio/buffer.h>
 #include <linux/iio/trigger_consumer.h>
 #include <linux/iio/triggered_buffer.h>
+#include <linux/iio/buffer_impl.h>
+#include <linux/iio/buffer-dma.h>
+#include <linux/iio/buffer-dmaengine.h>
 
 /*
  * AD738X registers definition
@@ -52,6 +61,8 @@
 #define AD738X_CONFIG1_REFSEL(x)	(((x) & 0x1) << 1)
 #define AD738X_CONFIG1_PMODE_MSK	BIT(0)
 #define AD738X_CONFIG1_PMODE(x)		(((x) & 0x1) << 0)
+#define AD738X_CONFIG1_RESET_MSK	GENMASK(15, 0)
+#define AD738X_CONFIG1_RESET(x)		(((x) & 0xFFFF) << 0)
 
 /*
  * AD738X_REG_CONFIG2
@@ -99,59 +110,74 @@ enum ad738x_ids {
 	ID_7388_4
 };
 
+enum ad738x_reg_read {
+	AD738x_STOP,
+	AD738x_START
+};
+
+enum ad738x_reg_read adc_mode;
+
+static int ad738x_buffer_predisable(struct iio_dev *indio_dev);
+
+
+
 struct ad738x_chip_info {
 	struct iio_chan_spec	*channels;
 	unsigned int 		num_channels;
 };
 
-#define AD738X_CHAN(index, bits)					\
+
+#define AD738X_CHAN(index, bits,bits_set)					\
 	{								\
 		.type = IIO_VOLTAGE,					\
 		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),		\
 		.info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE),	\
+		.info_mask_shared_by_all = BIT(IIO_CHAN_INFO_SAMP_FREQ),\
 		.indexed = 1,						\
 		.channel = index,					\
 		.scan_index = index,					\
 		.scan_type = {						\
 			.sign = 's',					\
-			.realbits = (bits),				\
-			.storagebits = bits,				\
-			.endianness = IIO_BE,				\
+			.realbits = bits,					\
+			.storagebits =bits_set,				\
+			.endianness = IIO_CPU,				\
+			.shift = (bits_set/2) * index,				\
 		},							\
 	}
 
-#define DECLARE_AD738X_CHANNELS(name, bits) 	\
+	
+#define DECLARE_AD738X_CHANNELS(name, bits,bits_set) 	\
 static struct iio_chan_spec name[] = { 		\
-		AD738X_CHAN(0, bits), 		\
-		AD738X_CHAN(1, bits), 		\
+		AD738X_CHAN(0, bits,bits_set), 		\
+		AD738X_CHAN(1, bits,bits_set), 		\
 }
 
-#define DECLARE_AD738X_4_CHANNELS(name, bits) \
+#define DECLARE_AD738X_4_CHANNELS(name, bits,bits_set) \
 static struct iio_chan_spec name[] = { \
-		AD738X_CHAN(0, bits), \
-		AD738X_CHAN(1, bits), \
-		AD738X_CHAN(2, bits), \
-		AD738X_CHAN(3, bits), \
+		AD738X_CHAN(0, bits,bits_set), \
+		AD738X_CHAN(1, bits,bits_set), \
+		AD738X_CHAN(2, bits,bits_set), \
+		AD738X_CHAN(3, bits,bits_set), \
 }
 
-DECLARE_AD738X_CHANNELS(ad7380_channels, 16);
-DECLARE_AD738X_CHANNELS(ad7381_channels, 14);
-DECLARE_AD738X_CHANNELS(ad7382_channels, 12);
-DECLARE_AD738X_CHANNELS(ad7383_channels, 16);
-DECLARE_AD738X_CHANNELS(ad7384_channels, 14);
-DECLARE_AD738X_CHANNELS(ad7385_channels, 12);
-DECLARE_AD738X_CHANNELS(ad7386_channels, 16);
-DECLARE_AD738X_CHANNELS(ad7387_channels, 14);
-DECLARE_AD738X_CHANNELS(ad7388_channels, 12);
-DECLARE_AD738X_4_CHANNELS(ad7380_4_channels, 16);
-DECLARE_AD738X_4_CHANNELS(ad7381_4_channels, 14);
-DECLARE_AD738X_4_CHANNELS(ad7382_4_channels, 12);
-DECLARE_AD738X_4_CHANNELS(ad7383_4_channels, 16);
-DECLARE_AD738X_4_CHANNELS(ad7384_4_channels, 14);
-DECLARE_AD738X_4_CHANNELS(ad7385_4_channels, 12);
-DECLARE_AD738X_4_CHANNELS(ad7386_4_channels, 16);
-DECLARE_AD738X_4_CHANNELS(ad7387_4_channels, 14);
-DECLARE_AD738X_4_CHANNELS(ad7388_4_channels, 12);
+DECLARE_AD738X_CHANNELS(ad7380_channels, 18,64);
+DECLARE_AD738X_CHANNELS(ad7381_channels, 16 ,32);
+DECLARE_AD738X_CHANNELS(ad7382_channels, 14 ,32);
+DECLARE_AD738X_CHANNELS(ad7383_channels, 18 ,64);
+DECLARE_AD738X_CHANNELS(ad7384_channels, 16 ,32);
+DECLARE_AD738X_CHANNELS(ad7385_channels, 14 ,32);
+DECLARE_AD738X_CHANNELS(ad7386_channels, 18 ,64);
+DECLARE_AD738X_CHANNELS(ad7387_channels, 16 ,32);
+DECLARE_AD738X_CHANNELS(ad7388_channels, 14 ,32);
+DECLARE_AD738X_4_CHANNELS(ad7380_4_channels, 16,64);
+DECLARE_AD738X_4_CHANNELS(ad7381_4_channels, 14,32);
+DECLARE_AD738X_4_CHANNELS(ad7382_4_channels, 12,32);
+DECLARE_AD738X_4_CHANNELS(ad7383_4_channels, 16,64);
+DECLARE_AD738X_4_CHANNELS(ad7384_4_channels, 14,32);
+DECLARE_AD738X_4_CHANNELS(ad7385_4_channels, 12,32);
+DECLARE_AD738X_4_CHANNELS(ad7386_4_channels, 16,64);
+DECLARE_AD738X_4_CHANNELS(ad7387_4_channels, 14,32);
+DECLARE_AD738X_4_CHANNELS(ad7388_4_channels, 12,32);
 
 static struct ad738x_chip_info ad738x_chip_info_tbl[] = {
 	[ID_7380] = {
@@ -229,66 +255,78 @@ static struct ad738x_chip_info ad738x_chip_info_tbl[] = {
 };
 
 struct ad738x_state {
+	struct spi_message spi_msg;
+	struct spi_transfer spi_transfer;
 	struct spi_device		*spi;
-	struct spi_transfer		t[5];
+	struct spi_transfer		t[8];
 	struct regulator		*vref;
 	const struct ad738x_chip_info 	*chip_info;
+	struct gpio_desc		*gpio_shift;
 	/*
 	 * DMA (thus cache coherency maintenance) requires the
 	 * transfer buffers to live in their own cache lines.
 	 * Make the buffer large enough for one 64 bit sample and one 64 bit
 	 * aligned 64 bit timestamp.
 	 */
-	unsigned char data[ALIGN(8, sizeof(s64)) + sizeof(s64)]
-			____cacheline_aligned;
+
+	u16 data[10] ____cacheline_aligned;
+	unsigned int num_bits;
+	bool bus_locked;
 };
 
-static int ad738x_spi_reg_read(struct ad738x_state *st,
-			       u8 reg_addr,
-			       u8 *reg_data)
+
+static int ad738x_spi_reg_write(struct ad738x_state *st,
+			        u8 reg_addr,
+			        u16 reg_data)
+{
+	struct spi_transfer t[] = {
+		{
+		.tx_buf = &st->data[0],
+		.len = 2,
+		.bits_per_word = 16,
+		}
+	};
+	int ret;
+	st->data[0] = ((reg_addr & 0x07) << 4) | 0x80 ;
+	st->data[0] = st->data[0] | be16_to_cpu(reg_data & 0x0FFF);
+	ret = spi_sync_transfer(st->spi, t, ARRAY_SIZE(t));
+	if (ret < 0)
+		return ret;
+	return ret;
+}
+
+static int ad738x_spi_reg_read(struct ad738x_state *st, u8 reg_addr,
+			       u8 *data)
 {
 	u8 tx_buf[2];
-	u8 rx_buf[2];
-	u8 n_tx = 2;
+	u8 rx_buf[4];
+	u8 n_tx = 4;
 	u8 n_rx = 2;
 	int ret;
 
 	tx_buf[0] = (reg_addr & 0x07) << 4;
 	tx_buf[1] = 0x00;
 
-	/*
-	 * A register read is performed by issuing a register read
-	 * command followed by an additional SPI command
-	 */
-	ret = spi_write_then_read(st->spi, &tx_buf[0], n_tx, NULL, 0);
-	ret |= spi_write_then_read(st->spi, NULL, 0, &rx_buf[0], n_rx);
-	if (ret < 0) {
-		dev_err(&st->spi->dev, "Reg Read Error %d", ret);
+	struct spi_transfer xfer [] = {
+	{
+		.tx_buf = tx_buf,
+		.len = 2,
+		.cs_change=1,
+		.bits_per_word = 16,
+	},
+	{
+		.rx_buf = rx_buf,
+		.len = 2,
+		.bits_per_word = 16,
+	},
+	};
+	ret =spi_sync_transfer(st->spi, xfer, ARRAY_SIZE(xfer));
+
+	if (ret < 0)
 		return ret;
-	}
 
-	reg_data[0] = rx_buf[0];
-	reg_data[1] = rx_buf[1];
-
-	return ret;
-}
-
-static int ad738x_spi_reg_write(struct ad738x_state *st,
-			        u8 reg_addr,
-			        u32 reg_data)
-{
-	u8 tx_buf[4];
-	u8 n_tx = 2;
-	int ret;
-
-	tx_buf[0] = AD738X_REG_WRITE(reg_addr) | ((reg_data & 0xF00) >> 8);
-	tx_buf[1] = (reg_data & 0xFF);
-	tx_buf[2] = 0x00;
-	tx_buf[3] = 0x00;
-
-	ret = spi_write_then_read(st->spi, &tx_buf[0], n_tx, NULL, 0);
-	ret |= spi_write_then_read(st->spi, &tx_buf[2], n_tx, NULL, 0);
-
+	data[0] = rx_buf[1];
+	data[1] = rx_buf[0];
 	return ret;
 }
 
@@ -300,8 +338,6 @@ static int ad738x_spi_write_mask(struct ad738x_state *st,
 	u8 spi_buf[2];
 	u16 reg_data;
 	int ret;
-
-	ret = ad738x_spi_reg_read(st, reg_addr, spi_buf);
 	reg_data = (spi_buf[0] << 8) | spi_buf[1];
 	reg_data &= ~mask;
 	reg_data |= data;
@@ -313,10 +349,16 @@ static int ad738x_spi_write_mask(struct ad738x_state *st,
 static int ad738x_reg_access(struct iio_dev *indio_dev,
 			     u32 reg, u32 writeval,
 			     u32 *readval)
-{
+{	
 	struct ad738x_state *st = iio_priv(indio_dev);
 	u8 reg_data[2];
 	int ret;
+
+	if(adc_mode=AD738x_START)
+	{	
+		ad738x_buffer_predisable(indio_dev);
+	}
+
 
 	mutex_lock(&indio_dev->mlock);
 	if (readval == NULL) {
@@ -327,7 +369,6 @@ static int ad738x_reg_access(struct iio_dev *indio_dev,
 		ret = 0;
 	}
 	mutex_unlock(&indio_dev->mlock);
-
 	return ret;
 }
 
@@ -379,32 +420,31 @@ static irqreturn_t ad738x_trigger_handler(int irq, void  *p)
 	return IRQ_HANDLED;
 }
 
-static int ad738x_scan_direct(struct ad738x_state *st)
+static int ad738x_scan_direct(struct ad738x_state *st ,int *data)
 {
-	u8 num_bytes = st->chip_info->num_channels * 2;
+	u8 num_bytes = 2;
+	int ret=0;
+	u8 reg_data[2];
+	adc_mode=AD738x_START;
+	
+ 	ad738x_spi_reg_write(st, AD738X_REG_CONFIG2, AD738X_CONFIG2_SDO2(1));
 	struct spi_transfer t[] = {
 		{
-			.tx_buf = &st->data[0],
-			.len = num_bytes,
-			.cs_change = 1,
-		}, {
 			.rx_buf = &st->data[0],
-			.len = num_bytes,
+			.len = 2,
+			.cs_change = 0,
+			.bits_per_word=st->num_bits,
+		},
+		{
+			.rx_buf = &st->data[1],
+			.len = 2,
+			.bits_per_word=st->num_bits,
 		},
 	};
-	int i;
-	int ret;
-
-	for (i = 0; i < num_bytes; i++)
-		st->data[i] = cpu_to_be16(AD738X_REG_NOP);
-
 	ret = spi_sync_transfer(st->spi, t, ARRAY_SIZE(t));
 
 	if (ret < 0)
 		return ret;
-
-	ret = num_bytes;
-
 	return ret;
 }
 
@@ -415,11 +455,12 @@ static int ad738x_read_raw(struct iio_dev *indio_dev,
 			   long info)
 {
 	struct ad738x_state *st = iio_priv(indio_dev);
-	u8 index = 2 * chan->scan_index;
+	u8 index = 1 * chan->scan_index;
 	u8 buf[8];
 	int scale_uv;
 	int i;
 	int ret;
+	int *data;
 
 	switch (info) {
 	case IIO_CHAN_INFO_RAW:
@@ -427,16 +468,10 @@ static int ad738x_read_raw(struct iio_dev *indio_dev,
 		if (iio_buffer_enabled(indio_dev))
 			ret = -EBUSY;
 		else
-			ret = ad738x_scan_direct(st);
+			ret = ad738x_scan_direct(st,data);
 		mutex_unlock(&indio_dev->mlock);
 		if (ret < 0)
 			return ret;
-
-		for (i = 0; i < ret; i++)
-			buf[i] = st->data[i];
-
-		*val = (buf[index] << 8) | buf[index+1];
-
 		return IIO_VAL_INT;
 	case IIO_CHAN_INFO_SCALE:
 		scale_uv = regulator_get_voltage(st->vref);
@@ -447,10 +482,127 @@ static int ad738x_read_raw(struct iio_dev *indio_dev,
 		*val2 = chan->scan_type.realbits;
 
 		return IIO_VAL_FRACTIONAL_LOG2;
+	case IIO_CHAN_INFO_SAMP_FREQ:
+		*val = 4000000;
+		return IIO_VAL_INT;
 	}
 
 	return -EINVAL;
 }
+
+static int ad738x_buffer_postenable(struct iio_dev *indio_dev)
+{
+	struct ad738x_state *st = iio_priv(indio_dev);
+	int ret;
+	u8 reg_data[2];
+	adc_mode=AD738x_START;
+	u8 tmp=0;	
+	
+	ad738x_spi_reg_write(st, AD738X_REG_CONFIG2, AD738X_CONFIG2_SDO2(0));
+	ad738x_spi_reg_read(st,AD738X_REG_CONFIG1, reg_data);
+	
+	tmp=((reg_data[1] & 0x0004) >>2);
+
+	if(tmp==1)
+	{
+		gpiod_set_value(st->gpio_shift, 1);
+		
+		struct spi_transfer xfer [] = {
+		{
+		.rx_buf = (void *)-1,
+		.len = 2,
+		.cs_change=1,
+		.bits_per_word = st->num_bits ,
+		},{
+		.rx_buf = (void *)-1,
+		.len = 2,
+		.cs_change=1,
+		.bits_per_word = st->num_bits,
+		},{
+		.rx_buf = (void *)-1,
+		.len = 2,
+		.cs_change=0,
+		.bits_per_word = st->num_bits,
+		}	
+		};
+
+		spi_message_init_with_transfers(&st->spi_msg, xfer,ARRAY_SIZE(xfer));
+		spi_bus_lock(st->spi->master);
+		st->bus_locked = true;
+		ret = spi_engine_offload_load_msg(st->spi, &st->spi_msg);
+		if (ret < 0)
+			return ret;
+		spi_engine_offload_enable(st->spi, true);
+	}
+	else
+	{		
+		gpiod_set_value(st->gpio_shift, 0);
+
+		struct spi_transfer xfer [] = {
+		{
+		.rx_buf = (void *)-1,
+		.len = 1,
+		.cs_change=1,
+		.bits_per_word = st->num_bits-2 ,
+		},{
+		.rx_buf = (void *)-1,
+		.len = 1,
+		.cs_change=1,
+		.bits_per_word = st->num_bits-2,
+		},{
+		.rx_buf = (void *)-1,
+		.len = 1,
+		.cs_change=1,
+		.bits_per_word = st->num_bits-2,
+		},{
+		.rx_buf = (void *)-1,
+		.len = 1,
+		.cs_change=0,
+		.bits_per_word = st->num_bits-2,
+		}	
+		};
+
+		spi_message_init_with_transfers(&st->spi_msg, xfer,ARRAY_SIZE(xfer));
+
+		spi_bus_lock(st->spi->master);
+		st->bus_locked = true;
+
+		ret = spi_engine_offload_load_msg(st->spi, &st->spi_msg);
+		if (ret < 0)
+			return ret;
+
+		spi_engine_offload_enable(st->spi, true);
+	}
+	return 0;
+}
+static int ad738x_buffer_predisable(struct iio_dev *indio_dev)
+{	
+	struct ad738x_state *st = iio_priv(indio_dev);
+
+	spi_engine_offload_enable(st->spi, false);
+	adc_mode=AD738x_STOP;
+
+	st->bus_locked = false;
+	return spi_bus_unlock(st->spi->master);
+}
+
+static int hw_submit_block(struct iio_dma_buffer_queue *queue,
+			   struct iio_dma_buffer_block *block)
+{	
+	block->block.bytes_used = block->block.size;
+
+	return iio_dmaengine_buffer_submit_block(queue, block, DMA_DEV_TO_MEM);
+}
+
+static const struct iio_dma_buffer_ops dma_buffer_ops = {
+	.submit = hw_submit_block,
+	.abort = iio_dmaengine_buffer_abort,
+};
+
+static const struct iio_buffer_setup_ops ad738x_buffer_setup_ops = {
+	.postenable = &ad738x_buffer_postenable,
+	.predisable = &ad738x_buffer_predisable,
+};
 
 static const struct iio_info ad738x_info = {
 	.read_raw = &ad738x_read_raw,
@@ -461,57 +613,74 @@ static const struct iio_info ad738x_info = {
 static int ad738x_probe(struct spi_device *spi)
 {
 	struct iio_dev *indio_dev;
+	struct iio_buffer *buffer;
 	struct ad738x_state *st;
-	int ret;
-
+	int ret ,dev_id;
+	
 	indio_dev = devm_iio_device_alloc(&spi->dev, sizeof(*st));
 	if (!indio_dev)
 		return -ENOMEM;
 
+	dev_id = spi_get_device_id(spi)->driver_data;
 	st = iio_priv(indio_dev);
 	st->chip_info =
 		&ad738x_chip_info_tbl[spi_get_device_id(spi)->driver_data];
-
+	
 	st->vref = devm_regulator_get(&spi->dev, "vref");
 	if (IS_ERR(st->vref))
 		return PTR_ERR(st->vref);
 	ret = regulator_enable(st->vref);
 	if (ret)
 		return ret;
-
+	
 	spi_set_drvdata(spi, indio_dev);
+	struct spi_controller *ctlr = spi->controller;
 
-	st->spi = spi;
+	ctlr->max_speed_hz=80000000;
+	spi->controller = ctlr;
+	st->spi=spi;
 
-	indio_dev->channels = st->chip_info->channels;
-	indio_dev->num_channels = st->chip_info->num_channels;
 	indio_dev->dev.parent = &spi->dev;
 	indio_dev->name = spi_get_device_id(spi)->name;
+	indio_dev->modes = INDIO_DIRECT_MODE |INDIO_BUFFER_HARDWARE;
+	indio_dev->setup_ops = &ad738x_buffer_setup_ops;
 	indio_dev->info = &ad738x_info;
-	indio_dev->modes = INDIO_DIRECT_MODE;
+	indio_dev->channels = st->chip_info->channels;
+	indio_dev->num_channels = st->chip_info->num_channels;
+	st->num_bits = indio_dev->channels->scan_type.realbits;
 
-	ret = iio_triggered_buffer_setup(indio_dev, NULL,
-					 &ad738x_trigger_handler, NULL);
-	if (ret)
-		goto error_disable_vref;
-
-	/* 1-wire mode */
+	st->gpio_shift = devm_gpiod_get(&spi->dev, "shift",GPIOD_OUT_LOW);
+	if (IS_ERR(st->gpio_shift))
+		return PTR_ERR(st->gpio_shift);
+	
+	/*2-wire mode */
 	ret = ad738x_spi_write_mask(st,
 				    AD738X_REG_CONFIG2,
 				    AD738X_CONFIG2_SDO2_MSK,
-				    AD738X_CONFIG2_SDO2(1));
+				    AD738X_CONFIG2_SDO2(0));
+	
 	if (ret < 0)
 		goto error_buffer_cleanup;
 
-	ret = iio_device_register(indio_dev);
-	if (ret)
-		return ret;
+	buffer = iio_dmaengine_buffer_alloc(indio_dev->dev.parent, "rx",
+					    &dma_buffer_ops, indio_dev);
+	if (IS_ERR(buffer))
+		return PTR_ERR(buffer);
+
+	iio_device_attach_buffer(indio_dev, buffer);
+
+	ret = devm_iio_device_register(&spi->dev, indio_dev);
+	if (ret < 0)
+		goto error;
 
 	return 0;
 
 error_buffer_cleanup:
 	iio_triggered_buffer_cleanup(indio_dev);
 error_disable_vref:
+	regulator_disable(st->vref);
+error:
+	iio_dmaengine_buffer_free(indio_dev->buffer);
 	regulator_disable(st->vref);
 
 	return ret;
@@ -550,11 +719,18 @@ static const struct spi_device_id ad738x_id[] = {
 	{ "ad7388-4", ID_7388_4 },
 	{}
 };
+
+static const struct of_device_id ad738x_of_match[] = {
+        { .compatible = "adi,ad7380" },
+        { .compatible = "adi,ad7381" },
+        { },
+};
+
 MODULE_DEVICE_TABLE(spi, ad738x_id);
 
 static struct spi_driver ad738x_driver = {
 	.driver = {
-		.name = KBUILD_MODNAME,
+		.name = "ad738x",
 	},
 	.probe = ad738x_probe,
 	.remove = ad738x_remove,
