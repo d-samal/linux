@@ -169,7 +169,7 @@ int adrv9002_axi_interface_set(struct adrv9002_rf_phy *phy, const u8 n_lanes,
 		reg_ctrl |= NUM_LANES(1);
 		tx_reg_ctrl |= NUM_LANES(1);
 		if (phy->ssi_type == ADI_ADRV9001_SSI_TYPE_CMOS) {
-			rate = cmos_ddr ? 3 : 7;
+			rate = cmos_ddr ? 3 : 31;
 			reg_ctrl |= SDR_DDR(!cmos_ddr);
 			tx_reg_ctrl |= SDR_DDR(!cmos_ddr);
 		} else {
@@ -190,7 +190,7 @@ int adrv9002_axi_interface_set(struct adrv9002_rf_phy *phy, const u8 n_lanes,
 
 		reg_ctrl |= NUM_LANES(4);
 		tx_reg_ctrl |= NUM_LANES(4);
-		rate = cmos_ddr ? 0 : 1;
+		rate = cmos_ddr ? 0 : 7;
 		reg_ctrl |= SDR_DDR(!cmos_ddr);
 		tx_reg_ctrl |= SDR_DDR(!cmos_ddr);
 		break;
@@ -198,7 +198,6 @@ int adrv9002_axi_interface_set(struct adrv9002_rf_phy *phy, const u8 n_lanes,
 		return -EINVAL;
 	}
 
-	rate = 31;
 
 	axiadc_write(st, AIM_AXI_REG(rx_off, ADI_REG_CNTRL), reg_ctrl);
 	axiadc_write(st, AIM_AXI_REG(tx_off, ADI_TX_REG_RATE), rate);
