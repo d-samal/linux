@@ -630,10 +630,10 @@ static int ad469x_Devic_Setup(struct iio_dev *indio_dev)
 
 	ret = ad469x_spi_reg_write(st, AD469x_REG_IF_CONFIG_A, 0x10);
 	ret = ad469x_spi_reg_write(st, AD469x_REG_IF_CONFIG_B, 0x00);
-	ret = ad469x_spi_reg_write(st, AD469x_REG_IF_CONFIG_C, 0x23); 
-	
+	ret = ad469x_spi_reg_write(st, AD469x_REG_IF_CONFIG_C, 0x23);
+
 	ret = ad469x_spi_reg_write(st, AD469x_REG_SEQ_CTRL, 0x80);
-	ret = ad469x_spi_reg_write(st, AD469x_REG_STD_SEQ_CONFIG+1, 0x03);
+	ret = ad469x_spi_reg_write(st, AD469x_REG_STD_SEQ_CONFIG+1, 0x01);
 	ret = ad469x_spi_reg_write(st, AD469x_REG_GPIO_CTRL, 0x00);
 	ret = ad469x_spi_reg_write(st, AD469x_REG_GP_MODE, 0x8E);
 
