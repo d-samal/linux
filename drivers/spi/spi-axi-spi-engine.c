@@ -312,6 +312,16 @@ int spi_engine_write_reg(struct spi_device *spi,unsigned int addr,unsigned int v
 }
 EXPORT_SYMBOL_GPL(spi_engine_write_reg);
 
+int spi_engine_read_reg(struct spi_device *spi,unsigned int addr, unsigned int *val)
+{
+        struct spi_master *master = spi->master;
+        struct spi_engine *spi_engine = spi_master_get_devdata(master);
+		
+        *val = readl(spi_engine->base + (addr<<2));
+        return 0;
+}
+EXPORT_SYMBOL_GPL(spi_engine_read_reg);
+
 void spi_engine_offload_enable(struct spi_device *spi, bool enable)
 {
 	struct spi_master *master = spi->master;
