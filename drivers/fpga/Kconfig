@@ -25,6 +25,7 @@ config FPGA_MGR_DEBUG_FS
 config FPGA_MGR_SOCFPGA
 	tristate "Altera SOCFPGA FPGA Manager"
 	depends on ARCH_SOCFPGA || COMPILE_TEST
+	select DMA_SHARED_BUFFER
 	help
 	  FPGA manager driver support for Altera SOCFPGA.
 
