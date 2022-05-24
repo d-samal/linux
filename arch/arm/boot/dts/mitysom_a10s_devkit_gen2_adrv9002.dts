@@ -14,7 +14,7 @@
 		dma_clk: dma_clk {
 			#clock-cells = <0x0>;
 			compatible = "fixed-clock";
-			clock-frequency = <250000000>;
+			clock-frequency = <100000000>;
 			clock-output-names = "dma_clk";
 		};
 	};
@@ -46,14 +46,14 @@
 			};
 
 
-			adrv9001_gpio: gpio_inout@60000 {
+			adrv9001_gpio: gpio_inout@41000 {
 				compatible = "altr,pio-1.0";
-				reg = <0x00060000 0x00000010>;
+				reg = <0x00041000 0x00000010>;
 				interrupt-parent = <&intc>;
-				interrupts = <0 46 4>;
+				interrupts = <0 27 4>;
 				/*interrupt-controller;
 				#interrupt-cells = <2>;*/
-				altr,gpio-bank-width = <19>;
+				altr,gpio-bank-width = <20>;
 				altr,interrupt-type = <4>;
 				altr,interrupt_type = <4>;
 				level_trigger = <1>;
@@ -67,7 +67,7 @@
 				reg = <0x0003C000 0x800>;
 				#dma-cells = <1>;
 				interrupt-parent = <&intc>;
-				interrupts = <0 42 4>;
+				interrupts = <0 21 4>;
 				clocks = <&dma_clk>;
 
 				adi,channels {
@@ -90,7 +90,7 @@
 				reg = <0x0002C000 0x800>;
 				#dma-cells = <1>;
 				interrupt-parent = <&intc>;
-				interrupts = <0 43 4>;
+				interrupts = <0 22 4>;
 				clocks = <&dma_clk>;
 
 				adi,channels {
@@ -107,18 +107,18 @@
 				};
 			};
 
-			axi_adrv9002_core_rx: axi-adrv9002-rx-lpc@30000 {
+			axi_adrv9002_core_rx: axi-adrv9002-rx-lpc@60000 {
 				compatible = "adi,axi-adrv9002-rx-1.0";
-				reg = <0x00030000 0x6000>;
+				reg = <0x00060000 0x6000>;
 				clocks = <&adc0_adrv9002 0>;
 				dmas = <&rx_dma 0>;
 				dma-names = "rx";
 				spibus-connected = <&adc0_adrv9002>;
 			};
 
-			axi_adrv9002_core_tx: axi-adrv9002-tx-lpc@3A000 {
+			axi_adrv9002_core_tx: axi-adrv9002-tx-lpc@6A000 {
 				compatible = "adi,axi-adrv9002-rx2tx2-1.0";
-				reg = <0x0003A000 0x2000>;
+				reg = <0x0006A000 0x2000>;
 				clocks = <&adc0_adrv9002 1>;
 				clock-names = "sampl_clk";
 				dmas = <&tx_dma 0>;
@@ -139,7 +139,7 @@
 
 	compatible = "adi,adrv9002-rx2tx2";
 	reset-gpios = <&adrv9001_gpio 14 GPIO_ACTIVE_LOW>;
-	ssi-sync-gpios = <&adrv9001_gpio 20 GPIO_ACTIVE_HIGH>;
+	ssi-sync-gpios = <&adrv9001_gpio 19 GPIO_ACTIVE_HIGH>;
 
 	clock-output-names = "rx1_sampl_clk", "tx1_sampl_clk", "tdd1_intf_clk";
 };
@@ -161,3 +161,4 @@
 		line-name = "fmc-vadj-en";
 	};
 };
+
