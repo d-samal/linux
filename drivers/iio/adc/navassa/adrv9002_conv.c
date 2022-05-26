@@ -182,7 +182,7 @@ int adrv9002_axi_interface_set(struct adrv9002_rf_phy *phy, const u8 n_lanes,
 
 		reg_ctrl |= NUM_LANES(2);
 		tx_reg_ctrl |= NUM_LANES(2);
-		rate = 1;
+		rate = 7;
 		break;
 	case ADI_ADRV9001_SSI_4_LANE:
 		if (phy->ssi_type == ADI_ADRV9001_SSI_TYPE_LVDS)
