@@ -190,7 +190,7 @@ int adrv9002_axi_interface_set(struct adrv9002_rf_phy *phy, const u8 n_lanes,
 
 		reg_ctrl |= NUM_LANES(4);
 		tx_reg_ctrl |= NUM_LANES(4);
-		rate = cmos_ddr ? 0 : 7;
+		rate = cmos_ddr ? 3 : 7;
 		reg_ctrl |= SDR_DDR(!cmos_ddr);
 		tx_reg_ctrl |= SDR_DDR(!cmos_ddr);
 		break;
