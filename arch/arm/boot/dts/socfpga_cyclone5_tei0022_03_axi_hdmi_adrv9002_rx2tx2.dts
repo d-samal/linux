@@ -2,6 +2,7 @@
 #include "socfpga_cyclone5.dtsi"
 #include "dt-bindings/interrupt-controller/irq.h"
 #include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/iio/adc/adi,adrv9002.h>
 
 / {
 	model = "Trenz tei0022";
@@ -386,11 +387,11 @@
 };
 
 &rx0 {
-	orx-gpios = <&adrv9001_gpio 0 GPIO_ACTIVE_HIGH>; 
+	orx-gpios = <&adrv9001_gpio ADRV9002_DGPIO_0 GPIO_ACTIVE_HIGH>; 
 };
 
 &rx1 {
-	orx-gpios = <&adrv9001_gpio 1 GPIO_ACTIVE_HIGH>;
+	orx-gpios = <&adrv9001_gpio ADRV9002_DGPIO_1 GPIO_ACTIVE_HIGH>;
 };
 
 
